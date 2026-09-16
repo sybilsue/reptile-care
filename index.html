@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="爬宠管家">
+<title>爬宠管家</title>
+<!-- 内联 SVG 图标：本地 file:// 打开时也能显示 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111'/%3E%3Ccircle cx='23' cy='27' r='4' fill='%23fff'/%3E%3Ccircle cx='41' cy='27' r='4' fill='%23fff'/%3E%3Cpath d='M18 42c6 6 22 6 28 0' stroke='%23fff' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<!-- PWA：部署到 https 后生效，本地打开时缺失会自动忽略，不影响使用 -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root{
+  --bg:#fff; --fg:#111; --fg2:#666; --fg3:#9a9a9a;
+  --line:#ececec; --line2:#f5f5f5; --fill:#f6f6f6;
+  --warn:#c0392b; --ok:#2f7a4f;
+  --r:14px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+button,input,select,textarea{font-family:inherit;font-size:15px;color:inherit}
+button{border:0;background:none;padding:0;cursor:pointer}
+input,select,textarea{width:100%;border:0;border-bottom:1px solid var(--line);padding:10px 0;background:transparent;outline:none;border-radius:0}
+input:focus,select:focus,textarea:focus{border-bottom-color:var(--fg)}
+textarea{resize:none;border:1px solid var(--line);border-radius:10px;padding:10px;min-height:70px}
+select{appearance:none;-webkit-appearance:none;background:transparent}
+.hidden{display:none!important}
+
+/* ------- 布局 ------- */
+#app{max-width:520px;margin:0 auto;min-height:100vh;position:relative}
+.page{padding:0 20px 110px;animation:fade .18s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.hd{padding:max(22px,env(safe-area-inset-top)) 0 14px;display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.hd h1{font-size:25px;font-weight:600;margin:0;letter-spacing:-.4px}
+.hd .sub{font-size:12px;color:var(--fg3)}
+
+/* ------- 底部导航 ------- */
+#tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  background:rgba(255,255,255,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);
+  padding-bottom:var(--safe-b);
+}
+#tabbar .in{max-width:520px;margin:0 auto;display:flex}
+.tab{flex:1;padding:9px 0 7px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg3);font-size:10.5px}
+.tab.on{color:var(--fg)}
+.tab svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+
+/* ------- 通用组件 ------- */
+.card{border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.sec-t{font-size:12px;color:var(--fg3);letter-spacing:.6px;margin:24px 0 10px;text-transform:uppercase}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.muted{color:var(--fg3)}
+.small{font-size:12.5px}
+.btn{display:block;width:100%;background:var(--fg);color:#fff;text-align:center;padding:13px;border-radius:12px;font-size:15px;font-weight:500}
+.btn:active{opacity:.82}
+.btn.gh{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.btn.dg{background:transparent;color:var(--warn);border:1px solid var(--line)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:4px 9px;border-radius:20px;background:var(--fill);color:var(--fg2)}
+.seg{display:flex;gap:6px;overflow-x:auto;padding:2px 0;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:0 0 auto;padding:7px 14px;border-radius:20px;border:1px solid var(--line);font-size:13px;color:var(--fg2)}
+.seg button.on{background:var(--fg);color:#fff;border-color:var(--fg)}
+.empty{text-align:center;color:var(--fg3);padding:34px 10px;font-size:13.5px;line-height:1.9}
+
+/* 宠物切换条 */
+.pswitch{display:flex;gap:8px;overflow-x:auto;padding:0 0 14px;scrollbar-width:none}
+.pswitch::-webkit-scrollbar{display:none}
+.pchip{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:8px 14px 8px 8px;border:1px solid var(--line);border-radius:22px}
+.pchip.on{border-color:var(--fg);background:var(--fg);color:#fff}
+.pchip .av{width:26px;height:26px;border-radius:50%;background:var(--fill);display:flex;align-items:center;justify-content:center;font-size:12px;overflow:hidden;flex:0 0 auto}
+.pchip.on .av{background:rgba(255,255,255,.22)}
+.pchip .av img{width:100%;height:100%;object-fit:cover}
+.pchip .nm{font-size:14px;white-space:nowrap}
+.pchip .meta{font-size:11px;color:var(--fg3);white-space:nowrap}
+.pchip.on .meta{color:rgba(255,255,255,.7)}
+
+/* 概览数字 */
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.kpi{border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.kpi .v{font-size:22px;font-weight:600;letter-spacing:-.5px}
+.kpi .v small{font-size:12px;font-weight:400;color:var(--fg3);margin-left:2px}
+.kpi .l{font-size:11.5px;color:var(--fg3);margin-top:3px}
+.kpi.alert{border-color:var(--warn)}
+.kpi.alert .v{color:var(--warn)}
+
+/* 记录流 */
+.day{margin:0 0 6px;padding:16px 0 4px;font-size:12px;color:var(--fg3);letter-spacing:.5px}
+.rec{display:flex;gap:12px;padding:13px 0;border-bottom:1px solid var(--line2);align-items:flex-start}
+.rec:last-child{border-bottom:0}
+.rec .ic{width:32px;height:32px;border-radius:10px;background:var(--fill);display:flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+.rec .bd{flex:1;min-width:0}
+.rec .t1{font-size:14.5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rec .t2{font-size:12.5px;color:var(--fg2);margin-top:2px;word-break:break-word}
+.rec .t2.note{color:var(--fg3);font-style:normal}
+.rec .tm{font-size:11.5px;color:var(--fg3);flex:0 0 auto;padding-top:2px}
+.rec .del{color:var(--fg3);font-size:18px;padding:0 2px;flex:0 0 auto;line-height:1}
+.tag{font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--fill);color:var(--fg2);font-weight:400}
+.tag.no{background:#fdecea;color:var(--warn)}
+
+/* 表单 —— 注意：隐藏态必须 pointer-events:none，否则全屏遮罩会吃掉所有点击 */
+.sheet-bg{
+  position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .2s ease, visibility .2s ease;
+}
+.sheet-bg.show{opacity:1;visibility:visible;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:51;background:#fff;
+  border-radius:18px 18px 0 0;max-width:520px;margin:0 auto;
+  transform:translateY(100%);pointer-events:none;
+  transition:transform .24s cubic-bezier(.3,.9,.3,1);
+  max-height:88vh;overflow-y:auto;padding:8px 20px calc(24px + var(--safe-b));
+}
+.sheet.show{transform:none;pointer-events:auto}
+.sheet .grab{width:36px;height:4px;background:var(--line);border-radius:2px;margin:6px auto 14px}
+.sheet h3{margin:0 0 4px;font-size:18px;font-weight:600}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--fg3);margin-bottom:2px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.typegrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 4px}
+.typegrid button{border:1px solid var(--line);border-radius:12px;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11.5px;color:var(--fg2)}
+.typegrid button.on{border-color:var(--fg);background:var(--fg);color:#fff}
+.typegrid .e{font-size:19px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.chips button{padding:7px 12px;border:1px solid var(--line);border-radius:18px;font-size:13px;color:var(--fg2)}
+.chips button.on{background:var(--fg);border-color:var(--fg);color:#fff}
+.stepper{display:flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:130px}
+.stepper button{width:40px;height:38px;font-size:17px;color:var(--fg2)}
+.stepper input{text-align:center;border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:9px 0}
+
+/* 图表 */
+.chart-wrap{overflow-x:auto;scrollbar-width:none}
+.chart-wrap::-webkit-scrollbar{display:none}
+.heat{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);gap:3px;justify-content:start;margin:4px 0 8px}
+.heat i{width:14px;height:14px;border-radius:3px;background:var(--fill);display:block}
+.legend{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--fg3)}
+.legend i{width:11px;height:11px;border-radius:2px;display:block}
+.bar{height:8px;border-radius:4px;background:var(--fill);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--fg);border-radius:4px}
+
+/* 错误提示条 */
+#errbar{
+  position:fixed;left:0;right:0;top:0;z-index:90;background:var(--warn);color:#fff;
+  font-size:12.5px;padding:10px 16px;line-height:1.6;display:none;word-break:break-all;
+}
+/* PC 端：显示为居中的手机框 */
+@media (min-width:600px){
+  body{background:#efefef}
+  #app{box-shadow:0 0 0 1px #e5e5e5}
+  #tabbar{background:transparent;border-top:0}
+  #tabbar .in{background:rgba(255,255,255,.96);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}
+}
+</style>
+</head>
+<body>
+<div id="errbar"></div>
+<div id="app">
+  <div id="view"></div>
+</div>
+
+<div id="tabbar"><div class="in">
+  <button class="tab" data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z"/></svg><span>首页</span></button>
+  <button class="tab" data-tab="log"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h11"/></svg><span>记录</span></button>
+  <button class="tab" data-tab="stat"><svg viewBox="0 0 24 24"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg><span>统计</span></button>
+  <button class="tab" data-tab="mine"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg><span>我的</span></button>
+</div></div>
+
+<div class="sheet-bg" id="sheetbg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheetbody"></div></div>
+
+<script>
+/* =========================================================
+   爬宠管家 — 单文件本地应用
+   数据全部保存在浏览器 localStorage，不联网
+   ========================================================= */
+(function(){
+'use strict';
+
+var KEY = 'reptile_care_v1';
+var LS_OK = true;                 // localStorage 是否可用（隐私模式下可能不可用）
+var S = { pets:[], records:[] };
+var UI = { tab:'home', petId:null, logFilter:'all', statPet:null, statMode:'weight' };
+var form = {};   // 记录表单草稿
+var petForm = {};// 宠物表单草稿
+
+/* ---------- 常量 ---------- */
+var TYPES = [
+  {k:'feed',   e:'🍽', n:'喂食', u:'喂食'},
+  {k:'weight', e:'⚖️', n:'称重', u:'称重'},
+  {k:'shed',   e:'🌀', n:'蜕皮', u:'蜕皮'},
+  {k:'poop',   e:'💧', n:'排泄', u:'排泄'},
+  {k:'health', e:'🩺', n:'健康', u:'健康'},
+  {k:'env',    e:'🌡', n:'环境', u:'环境'},
+  {k:'breed',  e:'🥚', n:'繁殖', u:'繁殖'},
+  {k:'note',   e:'📝', n:'备注', u:'备注'}
+];
+var TYPE_MAP = {}; TYPES.forEach(function(t){TYPE_MAP[t.k]=t;});
+
+var SPECIES = ['睫角守宫','豹纹守宫','玉米蛇','球蟒','鬃狮蜥','蓝舌石龙子','角蛙','苏卡达陆龟','捕鸟蛛','其他'];
+var FOOD_BY_SPECIES = {
+  '睫角守宫':['果泥 CGD','蟋蟀','杜比亚','面包虫','樱桃蟑螂','其他'],
+  '豹纹守宫':['蟋蟀','杜比亚','面包虫','大麦虫','其他'],
+  '玉米蛇':['乳鼠·粉皮','乳鼠·小白','乳鼠·白霜','乳鼠·亚成','乳鼠·成鼠','其他'],
+  '球蟒':['乳鼠·小白','乳鼠·白霜','乳鼠·亚成','乳鼠·成鼠','其他'],
+  '鬃狮蜥':['蟋蟀','杜比亚','面包虫','油麦菜','其他'],
+  '蓝舌石龙子':['狗粮','蜗牛','蔬菜','蓝舌粮','其他'],
+  '角蛙':['蟋蟀','杜比亚','乳鼠·粉皮','角蛙粮','其他'],
+  '苏卡达陆龟':['油麦菜','牧草','龟粮','蒲公英','其他'],
+  '捕鸟蛛':['蟋蟀','杜比亚','面包虫','其他']
+};
+var DEF_INTERVAL = {'睫角守宫':3,'豹纹守宫':3,'玉米蛇':7,'球蟒':10,'鬃狮蜥':2,'蓝舌石龙子':3,'角蛙':5,'苏卡达陆龟':1,'捕鸟蛛':7};
+
+/* 进食情况：内部值 <-> 中文 */
+var EATEN_CN = ['全部吃完','基本吃完','少量进食','拒食'];
+var EATEN_TO_CN = {yes:'全部吃完', mostly:'基本吃完', partial:'少量进食', no:'拒食'};
+var CN_TO_EATEN = {'全部吃完':'yes', '基本吃完':'mostly', '少量进食':'partial', '拒食':'no'};
+
+/* 某只宠物可选的食物列表（物种推荐 + 常见兜底） */
+function foodList(p){
+  var foods = (p && FOOD_BY_SPECIES[p.species]) || FOOD_BY_SPECIES['其他'] || ['其他'];
+  var all = foods.slice();
+  ['蟋蟀','杜比亚','面包虫','其他'].forEach(function(x){ if(all.indexOf(x)<0) all.push(x); });
+  return all;
+}
+
+/* ---------- 工具 ---------- */
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function pad(n){return n<10?'0'+n:''+n;}
+function today(){return ymd(new Date());}
+function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function parseD(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function days(s){return Math.floor((parseD(today())-parseD(s))/86400000);}
+function diffDays(a,b){return Math.floor((parseD(b)-parseD(a))/86400000);}
+function fmtMD(s){var p=s.split('-');return (+p[1])+'/'+(+p[2]);}
+function fmtDateCN(s){var p=s.split('-');return p[0]+'年'+(+p[1])+'月'+(+p[2])+'日';}
+function weekday(s){return '日一二三四五六'[parseD(s).getDay()];}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function num(v){var n=parseFloat(v);return isNaN(n)?null:n;}
+function $(s,r){return (r||document).querySelector(s);}
+function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
+
+/* ---------- 存取 ---------- */
+function showErr(msg){
+  var b = document.getElementById('errbar');
+  if(!b) return;
+  b.style.display = 'block';
+  b.textContent = '⚠ ' + msg;
+  document.body.style.paddingTop = '46px';   // 避免错误条盖住页面标题
+}
+function load(){
+  try{ localStorage.setItem(KEY+'__t','1'); localStorage.removeItem(KEY+'__t'); }
+  catch(e){ LS_OK = false; }
+  try{
+    var raw = localStorage.getItem(KEY);
+    if(raw){
+      var d = JSON.parse(raw);
+      S.pets = d.pets||[]; S.records = d.records||[];
+    }
+  }catch(e){ showErr('读取本地数据失败：'+e.message); }
+  if(!LS_OK && !S.pets.length){
+    showErr('当前浏览器禁用了本地存储（可能是隐私/无痕模式），本次记录不会被保存。请换普通窗口打开，或随时用「导出备份」保存数据。');
+  }
+  if(!S.pets.length){
+    S.pets = [
+      {id:uid(),name:'睫角守宫',species:'睫角守宫',morph:'',gender:'未知',birth:'',acquire:today(),avatar:'',interval:DEF_INTERVAL['睫角守宫']||3,createdAt:Date.now()},
+      {id:uid(),name:'玉米蛇',species:'玉米蛇',morph:'',gender:'未知',birth:'',acquire:today(),avatar:'',interval:DEF_INTERVAL['玉米蛇']||7,createdAt:Date.now()}
+    ];
+    save();
+  }
+  if(!UI.petId || !getPet(UI.petId)) UI.petId = S.pets[0].id;
+}
+function save(){
+  if(!LS_OK) return;
+  try{ localStorage.setItem(KEY, JSON.stringify({version:1,pets:S.pets,records:S.records})); }
+  catch(e){ alert('保存失败：'+e.message+'。可能是存储空间已满，请先导出备份。'); }
+}
+function getPet(id){for(var i=0;i<S.pets.length;i++)if(S.pets[i].id===id)return S.pets[i];return null;}
+function petRecords(id,type){
+  return S.records.filter(function(r){return r.petId===id && (type?r.type===type:true);})
+                  .sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:(a.createdAt<b.createdAt?1:-1);});
+}
+function lastRec(id,type){var r=petRecords(id,type);return r[0]||null;}
+function petAge(p){
+  if(!p.birth) return null;
+  var d = days(p.birth); if(d<0) return null;
+  if(d<60) return d+' 天';
+  if(d<730) return Math.floor(d/30.4)+' 个月';
+  return (d/365).toFixed(1)+' 岁';
+}
+
+/* =========================================================
+   渲染入口
+   ========================================================= */
+function render(){
+  var v = $('#view');
+  if(UI.tab==='home') v.innerHTML = viewHome();
+  else if(UI.tab==='log') v.innerHTML = viewLog();
+  else if(UI.tab==='stat') v.innerHTML = viewStat();
+  else v.innerHTML = viewMine();
+  $$('#tabbar .tab').forEach(function(b){b.classList.toggle('on', b.dataset.tab===UI.tab);});
+  bind();
+  window.scrollTo(0,0);
+}
+
+/* ---------- 首页 ---------- */
+function viewHome(){
+  var p = getPet(UI.petId);
+  if(!p) return '<div class="page"><div class="hd"><h1>爬宠管家</h1></div><div class="empty">还没有宠物，先去「我的」添加一只。</div></div>';
+  var lf = lastRec(p.id,'feed'), lw = lastRec(p.id,'weight'), ls = lastRec(p.id,'shed');
+  var dFeed = lf?days(lf.date):null;
+  var overdue = dFeed!==null && p.interval && dFeed >= p.interval;
+  var age = petAge(p);
+  var w = lw&&lw.v.weight!=null?lw.v.weight:null;
+  var prevW = null;
+  var ws = petRecords(p.id,'weight');
+  if(ws.length>1 && ws[1].v.weight!=null) prevW = ws[1].v.weight;
+
+  var h = '<div class="page">';
+  h += '<div class="hd"><h1>爬宠管家</h1><div class="sub">'+esc(today())+' 星期'+weekday(today())+'</div></div>';
+  h += petSwitcher();
+
+  // 核心状态
+  h += '<div class="kpis">';
+  h += '<div class="kpi'+(overdue?' alert':'')+'"><div class="v">'+(dFeed===null?'—':dFeed)+'<small> 天</small></div><div class="l">距上次喂食'+(dFeed===null?'':' · '+esc(lf.date.slice(5)))+'</div></div>';
+  h += '<div class="kpi"><div class="v">'+(w===null?'—':w)+'<small> g</small></div><div class="l">'+(prevW!==null&&w!==null?delta(w-prevW)+' · ':'')+(lw?'上次 '+esc(lw.date.slice(5)):'暂无称重')+'</div></div>';
+  h += '<div class="kpi"><div class="v">'+(age?age.split(' ')[0]:'—')+(age?'<small> '+age.split(' ')[1]+'</small>':'')+'</div><div class="l">'+(p.birth?'出生 '+esc(p.birth):'未填出生日期')+'</div></div>';
+  h += '<div class="kpi"><div class="v">'+(ls?days(ls.date):'—')+(ls?'<small> 天</small>':'')+'</div><div class="l">距上次蜕皮'+(ls?' · '+esc(ls.date.slice(5)):'')+'</div></div>';
+  h += '</div>';
+
+  if(overdue) h += '<div class="card" style="border-color:var(--warn)"><div class="row"><span class="small" style="color:var(--warn)">已 '+dFeed+' 天未喂食，目标间隔 '+p.interval+' 天</span><button class="pill" data-act="quickfeed">立即记录</button></div></div>';
+
+  h += '<button class="btn" data-act="add" style="margin:6px 0 22px">＋ 记一笔</button>';
+
+  h += '<div class="sec-t">最近动态</div>';
+  var recs = petRecords(p.id).slice(0,6);
+  if(!recs.length) h += '<div class="empty">还没有记录。<br>点上面的按钮记下第一条。</div>';
+  else h += recs.map(recRow).join('');
+  h += '</div>';
+  return h;
+}
+function delta(d){
+  if(Math.abs(d)<0.01) return '持平';
+  return (d>0?'↑+':'↓')+(Math.abs(d)%1===0?Math.abs(d):Math.abs(d).toFixed(1))+'g';
+}
+function petSwitcher(){
+  var h='<div class="pswitch">';
+  S.pets.forEach(function(p){
+    var on = p.id===UI.petId;
+    h += '<button class="pchip'+(on?' on':'')+'" data-act="switch" data-id="'+p.id+'">'
+      + '<span class="av">'+(p.avatar?'<img src="'+p.avatar+'">':'🐍')+'</span>'
+      + '<span><span class="nm">'+esc(p.name)+'</span><br><span class="meta">'+esc(p.species)+'</span></span></button>';
+  });
+  h += '<button class="pchip" data-act="gopet" style="color:var(--fg3)"><span class="av">＋</span><span class="nm">添加</span></button>';
+  h += '</div>';
+  return h;
+}
+
+/* ---------- 记录页 ---------- */
+function viewLog(){
+  var p = getPet(UI.petId);
+  var h = '<div class="page"><div class="hd"><h1>记录</h1><div class="sub">'+esc(p?p.name:'')+'</div></div>';
+  h += petSwitcher();
+  h += '<div class="seg" style="margin-bottom:8px">';
+  h += '<button data-act="filter" data-f="all" class="'+(UI.logFilter==='all'?'on':'')+'">全部</button>';
+  TYPES.forEach(function(t){
+    h += '<button data-act="filter" data-f="'+t.k+'" class="'+(UI.logFilter===t.k?'on':'')+'">'+t.n+'</button>';
+  });
+  h += '</div>';
+  var recs = petRecords(p?p.id:null, UI.logFilter==='all'?null:UI.logFilter);
+  if(!recs.length){ h += '<div class="empty">这个分类下还没有记录。</div>'; }
+  else{
+    var cur='';
+    recs.forEach(function(r){
+      if(r.date!==cur){ cur=r.date; h += '<div class="day">'+fmtDateCN(r.date)+' 星期'+weekday(r.date)+(r.date===today()?' · 今天':'')+'</div>'; }
+      h += recRow(r);
+    });
+  }
+  h += '</div>';
+  return h;
+}
+function recRow(r){
+  var t = TYPE_MAP[r.type]||{e:'•',n:'记录'};
+  var h = '<div class="rec">';
+  h += '<div class="ic">'+t.e+'</div>';
+  h += '<div class="bd"><div class="t1">'+esc(recTitle(r))+'</div>';
+  if(recSub(r)) h += '<div class="t2">'+recSub(r)+'</div>';
+  if(r.note) h += '<div class="t2 note">'+esc(r.note)+'</div>';
+  h += '</div>';
+  h += '<div class="tm">'+esc(r.time||'')+'</div>';
+  h += '<button class="del" data-act="delrec" data-id="'+r.id+'">×</button>';
+  h += '</div>';
+  return h;
+}
+function recTitle(r){
+  var v=r.v||{};
+  if(r.type==='feed'){
+    var s = v.food||'喂食';
+    if(v.size) s += ' · '+v.size;
+    return s;
+  }
+  if(r.type==='weight') return (v.weight!=null?v.weight+' g':'称重') + (v.svl?' · SVL '+v.svl+' cm':'');
+  if(r.type==='shed') return '蜕皮'+(v.complete==='no'?' · 不完整':(v.complete==='yes'?' · 完整':''));
+  if(r.type==='poop') return ({feces:'排便',urate:'尿酸',both:'排便+尿酸',none:'未排泄'})[v.kind]||'排泄';
+  if(r.type==='health') return v.symptom||'健康记录';
+  if(r.type==='env') return [v.hot?'热点 '+v.hot+'℃':null, v.cool?'冷区 '+v.cool+'℃':null, v.humidity?'湿度 '+v.humidity+'%':null].filter(Boolean).join(' · ')||'环境记录';
+  if(r.type==='breed') return v.event||'繁殖记录';
+  return v.text||'备注';
+}
+function recSub(r){
+  var v=r.v||{}, out=[];
+  if(r.type==='feed'){
+    if(v.eaten==='no') out.push('<span class="tag no">拒食</span>');
+    else if(v.eaten==='partial') out.push('<span class="tag">少量进食</span>');
+    else if(v.eaten==='mostly') out.push('<span class="tag">基本吃完</span>');
+    if(v.sup&&v.sup.length) out.push('<span class="tag">'+v.sup.join('+')+'</span>');
+  }
+  if(r.type==='shed'&&v.complete==='no') out.push('<span class="tag no">有残留</span>');
+  if(r.type==='poop'&&v.normal==='no') out.push('<span class="tag no">形态异常</span>');
+  if(r.type==='health'){ if(v.vet) out.push('<span class="tag">就医</span>'); if(v.medicine) out.push('<span class="tag">'+esc(v.medicine)+'</span>'); }
+  return out.join(' ');
+}
+
+/* ---------- 统计页 ---------- */
+function viewStat(){
+  var p = getPet(UI.statPet && getPet(UI.statPet) ? UI.statPet : UI.petId);
+  if(!p){ UI.tab='mine'; return viewMine(); }
+  UI.statPet = p.id;
+  var h = '<div class="page"><div class="hd"><h1>统计</h1><div class="sub">'+esc(p.name)+'</div></div>';
+  h += '<div class="seg">';
+  S.pets.forEach(function(x){ h += '<button data-act="statpet" data-id="'+x.id+'" class="'+(x.id===p.id?'on':'')+'">'+esc(x.name)+'</button>'; });
+  h += '</div>';
+
+  // 概览
+  var ws = petRecords(p.id,'weight').slice().reverse();
+  var fs = petRecords(p.id,'feed');
+  var monthAgo = ymd(new Date(Date.now()-30*86400000));
+  var f30 = fs.filter(function(r){return r.date>=monthAgo;});
+  var avgGap = null;
+  if(fs.length>1){
+    var g=[];
+    for(var i=0;i<Math.min(fs.length-1,8);i++) g.push(diffDays(fs[i+1].date, fs[i].date));
+    avgGap = Math.round(g.reduce(function(a,b){return a+b;},0)/g.length);
+  }
+  var w0 = ws.length?ws[0].v.weight:null, w1 = ws.length?ws[ws.length-1].v.weight:null;
+  h += '<div class="kpis" style="margin-top:14px">';
+  h += '<div class="kpi"><div class="v">'+f30.length+'<small> 次</small></div><div class="l">近 30 天喂食</div></div>';
+  h += '<div class="kpi"><div class="v">'+(avgGap===null?'—':avgGap)+'<small> 天</small></div><div class="l">平均喂食间隔</div></div>';
+  var gained = (w0!=null&&w1!=null)?(w1-w0):null;
+  h += '<div class="kpi"><div class="v">'+(gained===null?'—':(gained>=0?'+':'')+gained.toFixed(1))+'<small> g</small></div><div class="l">累计增重</div></div>';
+  h += '<div class="kpi"><div class="v">'+petRecords(p.id,'shed').length+'<small> 次</small></div><div class="l">蜕皮累计</div></div>';
+  h += '</div>';
+
+  // 生长曲线
+  h += '<div class="sec-t">生长曲线</div>';
+  h += '<div class="card">';
+  h += '<div class="seg" style="margin-bottom:10px">';
+  h += '<button data-act="statmode" data-m="weight" class="'+(UI.statMode==='weight'?'on':'')+'">体重 g</button>';
+  h += '<button data-act="statmode" data-m="svl" class="'+(UI.statMode==='svl'?'on':'')+'">体长 cm</button>';
+  h += '</div>';
+  h += lineChart(ws, UI.statMode);
+  h += '</div>';
+
+  // 喂食热力图
+  h += '<div class="sec-t">喂食日历 · 近 12 周</div>';
+  h += '<div class="card">'+heatmap(fs)+'</div>';
+
+  // 食物构成
+  h += '<div class="sec-t">食物构成 · 近 30 天</div>';
+  h += '<div class="card">'+foodBars(f30)+'</div>';
+  h += '</div>';
+  return h;
+}
+function lineChart(rows, mode){
+  var pts = rows.filter(function(r){return r.v[mode]!=null;}).map(function(r){return {x:r.date,y:r.v[mode]};});
+  if(pts.length<2) return '<div class="empty">至少需要 2 条'+(mode==='weight'?'体重':'体长')+'记录才能画曲线。</div>';
+  var W=320,H=170,PL=38,PR=10,PT=14,PB=26;
+  var ys = pts.map(function(p){return p.y;});
+  var mn = Math.min.apply(null,ys), mx = Math.max.apply(null,ys);
+  if(mn===mx){ mn = mn-1; mx = mx+1; }
+  var padv = (mx-mn)*0.12; mn-=padv; mx+=padv;
+  var X = function(i){return PL + i*(W-PL-PR)/(pts.length-1);};
+  var Y = function(v){return PT + (1-(v-mn)/(mx-mn))*(H-PT-PB);};
+  var s = '<div class="chart-wrap"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:170px;display:block">';
+  for(var g=0;g<=3;g++){
+    var vy = PT + g*(H-PT-PB)/3, vv = mx - g*(mx-mn)/3;
+    s += '<line x1="'+PL+'" y1="'+vy+'" x2="'+(W-PR)+'" y2="'+vy+'" stroke="#f0f0f0" stroke-width="1"/>';
+    s += '<text x="'+(PL-6)+'" y="'+(vy+3.5)+'" font-size="9" fill="#9a9a9a" text-anchor="end">'+(vv>=100?vv.toFixed(0):vv.toFixed(1))+'</text>';
+  }
+  var d = pts.map(function(p,i){return (i?'L':'M')+X(i).toFixed(1)+' '+Y(p.y).toFixed(1);}).join(' ');
+  s += '<path d="'+d+'" fill="none" stroke="#111" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+  pts.forEach(function(p,i){
+    s += '<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(p.y).toFixed(1)+'" r="2.6" fill="#fff" stroke="#111" stroke-width="1.4"/>';
+    if(i===pts.length-1) s += '<text x="'+X(i).toFixed(1)+'" y="'+(Y(p.y)-8)+'" font-size="9.5" fill="#111" text-anchor="end" font-weight="600">'+p.y+'</text>';
+  });
+  [0, Math.floor((pts.length-1)/2), pts.length-1].forEach(function(i,k){
+    if(k===1 && i===0) return;
+    var an = i===0?'start':(i===pts.length-1?'end':'middle');
+    s += '<text x="'+X(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#9a9a9a" text-anchor="'+an+'">'+fmtMD(pts[i].x)+'</text>';
+  });
+  s += '</svg></div>';
+  return s;
+}
+function heatmap(fs){
+  var map = {};
+  fs.forEach(function(r){ map[r.date]=(map[r.date]||0)+1; });
+  var end = parseD(today());
+  var start = new Date(end.getTime() - (12*7-1)*86400000);
+  start.setDate(start.getDate() - start.getDay()); // 对齐到周日，保证每列是一整周
+  var total = Math.round((end-start)/86400000)+1;
+  var cnt = 0;
+  var h = '<div class="heat">';
+  for(var i=0;i<total;i++){
+    var d = new Date(start.getTime()+i*86400000), ds = ymd(d);
+    var c = map[ds]||0; if(c) cnt++;
+    var bg = c===0?'#f2f2f2':(c===1?'#b9b9b9':'#111');
+    h += '<i style="background:'+bg+'" title="'+ds+'"></i>';
+  }
+  h += '</div><div class="row"><span class="legend">少 <i style="background:#f2f2f2"></i><i style="background:#b9b9b9"></i><i style="background:#111"></i> 多</span><span class="legend">区间内共 '+cnt+' 天有喂食</span></div>';
+  return h;
+}
+function foodBars(fs){
+  if(!fs.length) return '<div class="empty">近 30 天没有喂食记录。</div>';
+  var m={};
+  fs.forEach(function(r){ var k=r.v.food||'未记录'; m[k]=(m[k]||0)+1; });
+  var arr = Object.keys(m).map(function(k){return {k:k,v:m[k]};}).sort(function(a,b){return b.v-a.v;});
+  var mx = arr[0].v;
+  return arr.map(function(o){
+    return '<div style="margin-bottom:11px"><div class="row small" style="margin-bottom:5px"><span>'+esc(o.k)+'</span><span class="muted">'+o.v+' 次</span></div>'
+      + '<div class="bar"><i style="width:'+Math.max(6,o.v/mx*100)+'%"></i></div></div>';
+  }).join('');
+}
+
+/* ---------- 我的 ---------- */
+function viewMine(){
+  var h = '<div class="page"><div class="hd"><h1>我的</h1></div>';
+  h += '<div class="sec-t">宠物档案</div>';
+  S.pets.forEach(function(p){
+    h += '<div class="card"><div class="row">'
+      + '<div style="display:flex;gap:12px;align-items:center">'
+      + '<span class="av" style="width:44px;height:44px;border-radius:50%;background:var(--fill);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:20px">'+(p.avatar?'<img src="'+p.avatar+'" style="width:100%;height:100%;object-fit:cover">':'🐍')+'</span>'
+      + '<div><div style="font-size:16px">'+esc(p.name)+'</div><div class="small muted">'+esc(p.species)+(p.morph?' · '+esc(p.morph):'')+' · '+petRecords(p.id).length+' 条记录</div></div></div>'
+      + '<button class="pill" data-act="editpet" data-id="'+p.id+'">编辑</button></div></div>';
+  });
+  h += '<button class="btn gh" data-act="newpet">＋ 添加宠物</button>';
+
+  h += '<div class="sec-t">数据</div>';
+  h += '<div class="card" style="padding:6px 16px">';
+  h += rowBtn('导出备份 JSON','exportjson');
+  h += rowBtn('导入备份 JSON','importjson');
+  h += rowBtn('导出记录 CSV','exportcsv');
+  h += '</div>';
+  h += '<div class="small muted" style="margin:-4px 0 14px;line-height:1.7">数据只存在这台设备的浏览器里。清理浏览器数据 / 更换手机会丢失，建议定期导出备份。</div>';
+
+  h += '<div class="sec-t">关于</div>';
+  h += '<div class="card small muted" style="line-height:1.9">'
+    + '爬宠管家 · v1.1（单文件本地版）<br>'
+    + '无任何联网请求，所有数据保存在本机 localStorage。<br>'
+    + '把这个文件放在手机里用浏览器打开即可离线使用。<br>'
+    + '如需桌面图标与离线缓存（PWA），把文件上传到 GitHub Pages / Vercel 等静态托管后访问即可自动获得「安装到主屏幕」提示。'
+    + '</div>';
+  h += '<button class="btn dg" data-act="wipe" style="margin-top:14px">清空全部数据</button>';
+  h += '</div>';
+  return h;
+}
+function rowBtn(t,act){
+  return '<div class="row" style="padding:13px 0;border-bottom:1px solid var(--line2)"><span>'+t+'</span><button class="pill" data-act="'+act+'">›</button></div>';
+}
+
+/* =========================================================
+   交互绑定
+   ========================================================= */
+function bind(){
+  $$('#tabbar .tab').forEach(function(b){
+    b.onclick = function(){ UI.tab = b.dataset.tab; render(); };
+  });
+  $$('[data-act]').forEach(function(el){
+    el.onclick = function(){ act(el.dataset.act, el.dataset); };
+  });
+}
+function act(a, d){
+  if(a==='switch'){ UI.petId=d.id; render(); }
+  else if(a==='gopet'){ UI.tab='mine'; render(); }
+  else if(a==='filter'){ UI.logFilter=d.f; render(); }
+  else if(a==='statpet'){ UI.statPet=d.id; render(); }
+  else if(a==='statmode'){ UI.statMode=d.m; render(); }
+  else if(a==='delrec'){
+    if(!confirm('删除这条记录？')) return;
+    S.records = S.records.filter(function(r){return r.id!==d.id;}); save(); render();
+  }
+  else if(a==='add'){ openForm(null); }
+  else if(a==='quickfeed'){ openForm('feed'); }
+  else if(a==='newpet'){ openPet(null); }
+  else if(a==='editpet'){ openPet(d.id); }
+  else if(a==='exportjson'){ exportJSON(); }
+  else if(a==='importjson'){ importJSON(); }
+  else if(a==='exportcsv'){ exportCSV(); }
+  else if(a==='wipe'){
+    if(!confirm('将清空所有宠物与记录，且无法恢复。建议先导出备份。确定继续？')) return;
+    if(!confirm('再次确认：真的要清空全部数据吗？')) return;
+    localStorage.removeItem(KEY); S.pets=[]; S.records=[]; load(); UI.tab='home'; render();
+  }
+}
+
+/* =========================================================
+   记录表单
+   ========================================================= */
+function openForm(type){
+  form = { type: type||'feed', date: today(), petId: UI.petId,
+    food:'', size:'', eaten:'yes', sup:[],
+    weight:'', svl:'', complete:'', kind:'feces', normal:'yes',
+    symptom:'', medicine:'', vet:false,
+    hot:'', cool:'', humidity:'', event:'', text:'', note:'' };
+  var p = getPet(form.petId);
+  form.food = foodList(p)[0];      // 默认选中该物种的第一种食物
+  sheet('<h3>记一笔</h3><div class="small muted" id="fpname"></div>' + formHTML(), true);
+  syncForm();
+}
+function formHTML(){
+  var h = '';
+  h += '<div class="field" style="margin-top:16px"><label>日期</label><input type="date" id="f_date" value="'+today()+'"></div>';
+  h += '<div class="field"><label>类型</label><div class="typegrid" id="f_types">';
+  TYPES.forEach(function(t){
+    h += '<button data-t="'+t.k+'" class="'+(form.type===t.k?'on':'')+'"><span class="e">'+t.e+'</span>'+t.n+'</button>';
+  });
+  h += '</div></div>';
+  h += '<div id="f_fields"></div>';
+  h += '<div class="field"><label>备注</label><textarea id="f_note" placeholder="可选"></textarea></div>';
+  h += '<button class="btn" id="f_save" style="margin-top:6px">保存</button>';
+  return h;
+}
+function syncForm(){
+  $('#fpname').textContent = (getPet(form.petId)||{name:''}).name + ' · ' + TYPE_MAP[form.type].u;
+  $$('#f_types button').forEach(function(b){
+    b.classList.toggle('on', b.dataset.t===form.type);
+    b.onclick = function(){ form.type=b.dataset.t; syncForm(); };
+  });
+  $('#f_fields').innerHTML = fieldsByType();
+  bindFields();
+}
+function fieldsByType(){
+  var t=form.type, h='';
+  function chips(name, list, cur, multi){
+    var s='<div class="chips">';
+    list.forEach(function(x){
+      var on = multi ? cur.indexOf(x)>=0 : cur===x;
+      s += '<button data-c="'+name+'" data-v="'+esc(x)+'" class="'+(on?'on':'')+'">'+esc(x)+'</button>';
+    });
+    s += '</div><input type="hidden" id="f_'+name+'" value="'+esc(multi?cur.join(','):cur)+'">';
+    return s;
+  }
+  if(t==='feed'){
+    var p = getPet(form.petId);
+    var all = foodList(p);
+    // 默认选中第一种食物；若当前值不在候选里（比如换了宠物），也回落到第一种
+    if(all.indexOf(form.food) < 0) form.food = all[0];
+    h += '<div class="field"><label>食物</label>'+chips('food', all, form.food, false)+'</div>';
+    h += '<div class="field"><label>规格 / 大小</label>'
+      + '<input id="f_size" placeholder="如 5g、1.5cm、亚成、小号" value="'+esc(form.size)+'">'
+      + '<div class="small muted" style="margin-top:5px">选填，用来区分同一食物的不同尺寸</div></div>';
+    h += '<div class="field"><label>进食情况</label>'+chips('eaten',EATEN_CN, EATEN_TO_CN[form.eaten]||EATEN_CN[0], false)+'</div>';
+    h += '<div class="field"><label>添加剂（可多选）</label>'+chips('sup',['钙粉','D3','维生素','益生菌'], form.sup, true)+'</div>';
+  }
+  else if(t==='weight'){
+    h += '<div class="grid2"><div class="field"><label>体重 (g)</label><input type="number" step="0.1" id="f_weight" value="'+esc(form.weight)+'" placeholder="0.0"></div>';
+    h += '<div class="field"><label>体长 / SVL (cm)</label><input type="number" step="0.1" id="f_svl" value="'+esc(form.svl)+'" placeholder="可选"></div></div>';
+  }
+  else if(t==='shed'){
+    h += '<div class="field"><label>是否完整</label>'+chips('complete',['完整','不完整','不清楚'], ({yes:'完整',no:'不完整',unk:'不清楚'})[form.complete], false)+'</div>';
+  }
+  else if(t==='poop'){
+    h += '<div class="field"><label>类型</label>'+chips('kind',['排便','尿酸','排便+尿酸','未排泄'], ({feces:'排便',urate:'尿酸',both:'排便+尿酸',none:'未排泄'})[form.kind], false)+'</div>';
+    h += '<div class="field"><label>形态</label>'+chips('normal',['正常','异常'], ({yes:'正常',no:'异常'})[form.normal], false)+'</div>';
+  }
+  else if(t==='health'){
+    h += '<div class="field"><label>症状 / 事项</label><input id="f_symptom" value="'+esc(form.symptom)+'" placeholder="如 眼睛浑浊、拒食、软便"></div>';
+    h += '<div class="field"><label>用药</label><input id="f_medicine" value="'+esc(form.medicine)+'" placeholder="可选"></div>';
+    h += '<div class="field"><label>是否就医</label>'+chips('vet',['否','是'], form.vet?'是':'否', false)+'</div>';
+  }
+  else if(t==='env'){
+    h += '<div class="grid2"><div class="field"><label>热点温度 ℃</label><input type="number" step="0.1" id="f_hot" value="'+esc(form.hot)+'"></div>';
+    h += '<div class="field"><label>冷区温度 ℃</label><input type="number" step="0.1" id="f_cool" value="'+esc(form.cool)+'"></div></div>';
+    h += '<div class="field"><label>湿度 %</label><input type="number" step="1" id="f_humidity" value="'+esc(form.humidity)+'"></div>';
+  }
+  else if(t==='breed'){
+    h += '<div class="field"><label>事件</label>'+chips('event',['交配','产卵','孵化','拒食期','其他'], form.event||'交配', false)+'</div>';
+  }
+  else if(t==='note'){
+    h += '<div class="field"><label>内容</label><textarea id="f_text" placeholder="写点什么">'+esc(form.text)+'</textarea></div>';
+  }
+  return h;
+}
+var CHIP_MAP = {
+  eaten:CN_TO_EATEN,
+  complete:{'完整':'yes','不完整':'no','不清楚':'unk'},
+  kind:{'排便':'feces','尿酸':'urate','排便+尿酸':'both','未排泄':'none'},
+  normal:{'正常':'yes','异常':'no'}
+};
+function bindFields(){
+  $$('#f_fields .chips button').forEach(function(b){
+    b.onclick = function(){
+      var n=b.dataset.c, v=b.dataset.v;
+      if(n==='sup'){
+        var i=form.sup.indexOf(v);
+        if(i>=0) form.sup.splice(i,1); else form.sup.push(v);
+      }else if(n==='vet'){ form.vet = (v==='是'); }
+      else if(n==='food'){ form.food = v; }
+      else if(CHIP_MAP[n]){ form[n] = CHIP_MAP[n][v]; }
+      else { form[n] = v; }
+      syncForm();
+    };
+  });
+  $$('#f_fields [data-s]').forEach(function(b){
+    b.onclick = function(){
+      var k=b.dataset.s, d=+b.dataset.d;
+      form[k] = Math.max(0, (parseFloat(form[k])||0)+d);
+      syncForm();
+    };
+  });
+  var ids = ['weight','svl','size','symptom','medicine','hot','cool','humidity','text'];
+  ids.forEach(function(k){
+    var el = $('#f_'+k); if(!el) return;
+    el.oninput = function(){ form[k] = el.value; };
+  });
+  $('#f_date').onchange = function(){ form.date = this.value; };
+  $('#f_note').oninput = function(){ form.note = this.value; };
+  $('#f_save').onclick = saveRecord;
+}
+function saveRecord(){
+  var v = {};
+  if(form.type==='feed'){
+    if(!form.food){ alert('请选择食物'); return; }
+    v = {food:form.food, size:form.size, eaten:form.eaten, sup:form.sup.slice()};
+  } else if(form.type==='weight'){
+    var w=num(form.weight), s=num(form.svl);
+    if(w==null && s==null){ alert('请填体重或体长'); return; }
+    v = {weight:w, svl:s};
+  } else if(form.type==='shed'){ v = {complete:form.complete||'unk'}; }
+  else if(form.type==='poop'){ v = {kind:form.kind, normal:form.normal}; }
+  else if(form.type==='health'){ if(!form.symptom){ alert('请填写症状或事项'); return; } v = {symptom:form.symptom, medicine:form.medicine, vet:form.vet}; }
+  else if(form.type==='env'){ v = {hot:num(form.hot), cool:num(form.cool), humidity:num(form.humidity)}; if(v.hot==null&&v.cool==null&&v.humidity==null){alert('请至少填一项');return;} }
+  else if(form.type==='breed'){ v = {event:form.event||'交配'}; }
+  else if(form.type==='note'){ if(!form.text){ alert('请填写内容'); return; } v = {text:form.text}; }
+
+  S.records.push({ id:uid(), petId:form.petId, type:form.type, date:form.date,
+    time: pad(new Date().getHours())+':'+pad(new Date().getMinutes()),
+    v:v, note:form.note, createdAt:Date.now() });
+  save(); closeSheet(); render();
+}
+
+/* =========================================================
+   宠物表单
+   ========================================================= */
+function openPet(id){
+  var p = id?getPet(id):null;
+  petForm = p ? JSON.parse(JSON.stringify(p))
+    : {id:null,name:'',species:'睫角守宫',morph:'',gender:'未知',birth:'',acquire:today(),avatar:'',interval:3};
+  sheet('<h3>'+(id?'编辑宠物':'添加宠物')+'</h3>' + petHTML(), true);
+  bindPet();
+}
+function petHTML(){
+  var f=petForm;
+  var h = '<div style="margin-top:14px">';
+  h += '<div class="field"><label>名字</label><input id="p_name" value="'+esc(f.name)+'" placeholder="如 小角 / 玉米"></div>';
+  h += '<div class="field"><label>物种</label><select id="p_species">'
+     + SPECIES.map(function(s){return '<option '+(f.species===s?'selected':'')+'>'+s+'</option>';}).join('')
+     + '</select></div>';
+  h += '<div class="grid2"><div class="field"><label>品系 / 基因</label><input id="p_morph" value="'+esc(f.morph)+'" placeholder="如 无纹 / 白化"></div>';
+  h += '<div class="field"><label>性别</label><select id="p_gender">'
+     + ['未知','公','母'].map(function(s){return '<option '+(f.gender===s?'selected':'')+'>'+s+'</option>';}).join('')+'</select></div></div>';
+  h += '<div class="grid2"><div class="field"><label>出生日期</label><input type="date" id="p_birth" value="'+esc(f.birth)+'"></div>';
+  h += '<div class="field"><label>入手日期</label><input type="date" id="p_acquire" value="'+esc(f.acquire)+'"></div></div>';
+  h += '<div class="field"><label>目标喂食间隔（天）</label><input type="number" id="p_interval" value="'+f.interval+'" min="1"><div class="small muted" style="margin-top:4px">超过这个天数会在首页标红提醒</div></div>';
+  h += '<div class="field"><label>头像</label><div class="row"><input type="file" id="p_file" accept="image/*" style="font-size:12px">'
+     + '<button class="pill" data-p="rmav">移除</button></div>'
+     + '<div id="p_av" style="margin-top:8px">'+(f.avatar?'<img src="'+f.avatar+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover">':'')+'</div></div>';
+  h += '<button class="btn" id="p_save" style="margin-top:6px">保存</button>';
+  if(petForm.id) h += '<button class="btn dg" id="p_del" style="margin-top:10px">删除这只宠物及其全部记录</button>';
+  h += '</div>';
+  return h;
+}
+function bindPet(){
+  var map = {name:'p_name',morph:'p_morph',birth:'p_birth',acquire:'p_acquire',interval:'p_interval'};
+  Object.keys(map).forEach(function(k){ var el=$('#'+map[k]); el.oninput=el.onchange=function(){ petForm[k]=el.value; }; });
+  $('#p_species').onchange = function(){
+    petForm.species = this.value;
+    petForm.interval = DEF_INTERVAL[this.value] || petForm.interval;
+    $('#p_interval').value = petForm.interval;
+  };
+  $('#p_gender').onchange = function(){ petForm.gender = this.value; };
+  $('#p_file').onchange = function(e){
+    var f = e.target.files[0]; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        var c=document.createElement('canvas'), S=160;
+        var side=Math.min(img.width,img.height);
+        c.width=S;c.height=S;
+        c.getContext('2d').drawImage(img,(img.width-side)/2,(img.height-side)/2,side,side,0,0,S,S);
+        petForm.avatar = c.toDataURL('image/jpeg',0.72);
+        $('#p_av').innerHTML = '<img src="'+petForm.avatar+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover">';
+        if(petForm.avatar.length>260000) alert('图片较大，可能占用较多存储空间，建议换一张小图。');
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(f);
+  };
+  var rm = $('[data-p="rmav"]');
+  if(rm) rm.onclick = function(){ petForm.avatar=''; $('#p_av').innerHTML=''; };
+  $('#p_save').onclick = function(){
+    if(!petForm.name.trim()){ alert('请填写名字'); return; }
+    petForm.interval = parseInt(petForm.interval,10)||3;
+    if(petForm.id){
+      for(var i=0;i<S.pets.length;i++) if(S.pets[i].id===petForm.id) S.pets[i]=petForm;
+    }else{
+      petForm.id = uid(); petForm.createdAt = Date.now(); S.pets.push(petForm);
+      UI.petId = petForm.id;
+    }
+    save(); closeSheet(); render();
+  };
+  var del = $('#p_del');
+  if(del) del.onclick = function(){
+    if(!confirm('删除「'+petForm.name+'」及其全部记录？此操作不可撤销。')) return;
+    S.pets = S.pets.filter(function(p){return p.id!==petForm.id;});
+    S.records = S.records.filter(function(r){return r.petId!==petForm.id;});
+    if(UI.petId===petForm.id) UI.petId = S.pets[0]?S.pets[0].id:null;
+    save(); closeSheet(); render();
+  };
+}
+
+/* =========================================================
+   Sheet
+   ========================================================= */
+function sheet(html, show){
+  $('#sheetbody').innerHTML = html;
+  $('#sheet').classList.add('show');
+  $('#sheetbg').classList.add('show');
+}
+function closeSheet(){
+  $('#sheet').classList.remove('show');
+  $('#sheetbg').classList.remove('show');
+}
+$('#sheetbg').onclick = closeSheet;
+
+/* =========================================================
+   导入导出
+   ========================================================= */
+function download(name, content, mime){
+  var blob = new Blob([content], {type:mime||'application/octet-stream'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+}
+function exportJSON(){
+  download('爬宠管家备份_'+today()+'.json', JSON.stringify({version:1,exportedAt:new Date().toISOString(),pets:S.pets,records:S.records},null,1), 'application/json');
+}
+function exportCSV(){
+  var nameMap = {}; S.pets.forEach(function(p){nameMap[p.id]=p.name;});
+  var rows = [['日期','时间','宠物','类型','内容','进食情况','备注']];
+  S.records.slice().sort(function(a,b){return a.date<b.date?1:-1;}).forEach(function(r){
+    var v=r.v||{};
+    var content = [v.food, v.size, v.weight!=null?v.weight+'g':null, v.svl?v.svl+'cm':null, v.symptom, v.event, v.text].filter(Boolean).join(' ');
+    var eaten = (r.type==='feed' && v.eaten) ? (EATEN_TO_CN[v.eaten]||'') : '';
+    rows.push([r.date, r.time||'', nameMap[r.petId]||'', TYPE_MAP[r.type]?TYPE_MAP[r.type].n:r.type, content, eaten, r.note||'']);
+  });
+  var csv = '\ufeff' + rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  download('爬宠记录_'+today()+'.csv', csv, 'text/csv;charset=utf-8');
+}
+function importJSON(){
+  var inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json,application/json';
+  inp.onchange = function(){
+    var f = inp.files[0]; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      try{
+        var d = JSON.parse(rd.result);
+        if(!d.pets || !d.records) throw 0;
+        if(!confirm('导入 '+d.pets.length+' 只宠物、'+d.records.length+' 条记录？\n\n选择「确定」= 覆盖当前全部数据；如需保留请先导出备份。')) return;
+        S.pets = d.pets; S.records = d.records;
+        UI.petId = S.pets[0]?S.pets[0].id:null;
+        save(); render(); alert('导入成功');
+      }catch(e){ alert('文件格式不正确，请选择本应用导出的 JSON 备份。'); }
+    };
+    rd.readAsText(f);
+  };
+  inp.click();
+}
+
+/* ---------- 启动 ---------- */
+window.onerror = function(msg, src, line){
+  showErr('脚本出错（第 '+line+' 行）：'+msg+'　—　请截图这个提示反馈。');
+  return false;
+};
+try{
+  load();
+  applyUrlIntent();   // 处理桌面快捷方式带过来的参数
+  render();
+}catch(e){
+  showErr('初始化失败：'+e.message);
+  document.getElementById('view').innerHTML =
+    '<div class="page"><div class="hd"><h1>爬宠管家</h1></div>'
+    + '<div class="empty">初始化失败：'+esc(e.message)+'<br><br>请尝试换用 Chrome / Edge 最新版打开。</div></div>';
+}
+
+/* ---------- 桌面快捷方式意图 ----------
+   支持 index.html?a=add（直接弹出记录表单）和 ?t=stat（打开统计页） */
+function applyUrlIntent(){
+  try{
+    var q = location.search.replace(/^\?/,'');
+    if(!q) return;
+    var p = {};
+    q.split('&').forEach(function(kv){
+      var a = kv.split('='); p[decodeURIComponent(a[0])] = decodeURIComponent(a[1]||'');
+    });
+    if(p.t && ['home','log','stat','mine'].indexOf(p.t)>=0) UI.tab = p.t;
+    if(p.a === 'add') setTimeout(function(){ openForm('feed'); }, 260);
+  }catch(e){}
+}
+
+/* ---------- Service Worker 注册 ----------
+   只在 https / localhost 下注册。本地 file:// 打开时静默跳过，功能不受影响 */
+if('serviceWorker' in navigator && /^(https?:)$/.test(location.protocol)){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      // 发现新版本时自动接管，避免用户一直用旧缓存
+      reg.addEventListener('updatefound', function(){
+        var nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener('statechange', function(){
+          if(nw.state === 'installed' && navigator.serviceWorker.controller){
+            reg.waiting && reg.waiting.postMessage({type:'SKIP_WAITING'});
+          }
+        });
+      });
+    }).catch(function(err){
+      // 注册失败（比如 file:// 或不支持）不影响应用本身
+      if(window.console) console.warn('SW 注册失败：', err && err.message);
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    // 新版本接管后刷新一次，保证用到最新代码
+    try{
+      if(!sessionStorage.getItem('sw_reloaded')){
+        sessionStorage.setItem('sw_reloaded','1');
+        location.reload();
+      }
+    }catch(e){ /* sessionStorage 不可用时忽略 */ }
+  });
+}
+})();
+</script>
+</body>
+</html>
