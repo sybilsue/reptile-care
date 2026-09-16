@@ -7,7 +7,7 @@
 **许可：CC BY-NC-SA 4.0 —— 个人免费使用，禁止一切商业用途。**
 
 <div align="center">
-  <img src="license-badge.png" alt="CC BY-NC-SA 4.0" width="420">
+  <img src="cc-badge.png" alt="CC BY-NC-SA 4.0" width="420">
 </div>
 
 <br>
@@ -149,6 +149,9 @@
 
 本项目采用 **CC BY-NC-SA 4.0**（署名 - 非商业性使用 - 相同方式共享）协议。
 
+> `LICENSE` 文件为 Creative Commons 官方标准原文，未作任何增删，以便 GitHub 自动识别。
+> 以下为本项目的适用说明，同样具备约束力。
+
 ### 你可以
 
 - 免费用于个人饲养记录
@@ -158,10 +161,12 @@
 
 ### 你不能
 
-- 出售、出租本项目或其修改版本
-- 把它作为付费产品 / 付费服务的一部分
-- 在其中植入广告、内购或任何变现机制
-- 未获书面许可用于企业或商户的经营性用途
+以下行为均属于商业使用，明确禁止：
+
+1. 将本项目或其修改版本出售、出租、授权给第三方获利
+2. 将本项目作为付费产品 / 付费服务的一部分提供
+3. 在本项目中植入广告、付费墙、内购或任何形式的变现机制
+4. 未获书面许可，将本项目用于企业、机构、商户的内部经营性用途
 
 ### 你需要
 
@@ -172,4 +177,4 @@
 
 > 如需商业授权，请联系作者另行取得书面许可。
 >
-> 协议全文见 `LICENSE`，官方文本见 [creativecommons.org](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)。
+> 官方文本见 [creativecommons.org](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode)。
