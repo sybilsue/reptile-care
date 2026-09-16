@@ -8,13 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="爬宠管家">
 <title>爬宠管家</title>
-<!-- 内联 SVG 图标：本地 file:// 打开时也能显示 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111'/%3E%3Ccircle cx='23' cy='27' r='4' fill='%23fff'/%3E%3Ccircle cx='41' cy='27' r='4' fill='%23fff'/%3E%3Cpath d='M18 42c6 6 22 6 28 0' stroke='%23fff' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<!-- PWA：部署到 https 后生效，本地打开时缺失会自动忽略，不影响使用 -->
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root{
   --bg:#fff; --fg:#111; --fg2:#666; --fg3:#9a9a9a;
@@ -225,19 +219,6 @@ var FOOD_BY_SPECIES = {
 };
 var DEF_INTERVAL = {'睫角守宫':3,'豹纹守宫':3,'玉米蛇':7,'球蟒':10,'鬃狮蜥':2,'蓝舌石龙子':3,'角蛙':5,'苏卡达陆龟':1,'捕鸟蛛':7};
 
-/* 进食情况：内部值 <-> 中文 */
-var EATEN_CN = ['全部吃完','基本吃完','少量进食','拒食'];
-var EATEN_TO_CN = {yes:'全部吃完', mostly:'基本吃完', partial:'少量进食', no:'拒食'};
-var CN_TO_EATEN = {'全部吃完':'yes', '基本吃完':'mostly', '少量进食':'partial', '拒食':'no'};
-
-/* 某只宠物可选的食物列表（物种推荐 + 常见兜底） */
-function foodList(p){
-  var foods = (p && FOOD_BY_SPECIES[p.species]) || FOOD_BY_SPECIES['其他'] || ['其他'];
-  var all = foods.slice();
-  ['蟋蟀','杜比亚','面包虫','其他'].forEach(function(x){ if(all.indexOf(x)<0) all.push(x); });
-  return all;
-}
-
 /* ---------- 工具 ---------- */
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function pad(n){return n<10?'0'+n:''+n;}
@@ -410,7 +391,8 @@ function recTitle(r){
   var v=r.v||{};
   if(r.type==='feed'){
     var s = v.food||'喂食';
-    if(v.size) s += ' · '+v.size;
+    if(v.size) s += ' ×'+v.size;
+    else if(v.count) s += ' ×'+v.count+(v.unit?'':'');
     return s;
   }
   if(r.type==='weight') return (v.weight!=null?v.weight+' g':'称重') + (v.svl?' · SVL '+v.svl+' cm':'');
@@ -426,7 +408,6 @@ function recSub(r){
   if(r.type==='feed'){
     if(v.eaten==='no') out.push('<span class="tag no">拒食</span>');
     else if(v.eaten==='partial') out.push('<span class="tag">少量进食</span>');
-    else if(v.eaten==='mostly') out.push('<span class="tag">基本吃完</span>');
     if(v.sup&&v.sup.length) out.push('<span class="tag">'+v.sup.join('+')+'</span>');
   }
   if(r.type==='shed'&&v.complete==='no') out.push('<span class="tag no">有残留</span>');
@@ -621,12 +602,10 @@ function act(a, d){
    ========================================================= */
 function openForm(type){
   form = { type: type||'feed', date: today(), petId: UI.petId,
-    food:'', size:'', eaten:'yes', sup:[],
+    food:'', count:1, unit:'只', size:'', eaten:'yes', sup:[],
     weight:'', svl:'', complete:'', kind:'feces', normal:'yes',
     symptom:'', medicine:'', vet:false,
     hot:'', cool:'', humidity:'', event:'', text:'', note:'' };
-  var p = getPet(form.petId);
-  form.food = foodList(p)[0];      // 默认选中该物种的第一种食物
   sheet('<h3>记一笔</h3><div class="small muted" id="fpname"></div>' + formHTML(), true);
   syncForm();
 }
@@ -665,14 +644,13 @@ function fieldsByType(){
   }
   if(t==='feed'){
     var p = getPet(form.petId);
-    var all = foodList(p);
-    // 默认选中第一种食物；若当前值不在候选里（比如换了宠物），也回落到第一种
-    if(all.indexOf(form.food) < 0) form.food = all[0];
+    var foods = (p && FOOD_BY_SPECIES[p.species]) || FOOD_BY_SPECIES['其他'] || ['其他'];
+    var all = foods.slice(); ['蟋蟀','杜比亚','面包虫','其他'].forEach(function(x){ if(all.indexOf(x)<0) all.push(x); });
     h += '<div class="field"><label>食物</label>'+chips('food', all, form.food, false)+'</div>';
-    h += '<div class="field"><label>规格 / 大小</label>'
-      + '<input id="f_size" placeholder="如 5g、1.5cm、亚成、小号" value="'+esc(form.size)+'">'
-      + '<div class="small muted" style="margin-top:5px">选填，用来区分同一食物的不同尺寸</div></div>';
-    h += '<div class="field"><label>进食情况</label>'+chips('eaten',EATEN_CN, EATEN_TO_CN[form.eaten]||EATEN_CN[0], false)+'</div>';
+    h += '<div class="grid2"><div class="field"><label>数量</label>'
+      + '<div class="stepper"><button data-s="count" data-d="-1">−</button><input type="number" id="f_count" value="'+form.count+'" min="0"><button data-s="count" data-d="1">＋</button></div></div>';
+    h += '<div class="field"><label>规格 / 大小</label><input id="f_size" placeholder="如 5g、亚成" value="'+esc(form.size)+'"></div></div>';
+    h += '<div class="field"><label>进食情况</label>'+chips('eaten',['全部吃完','少量进食','拒食'], ({yes:'全部吃完',partial:'少量进食',no:'拒食'})[form.eaten], false)+'</div>';
     h += '<div class="field"><label>添加剂（可多选）</label>'+chips('sup',['钙粉','D3','维生素','益生菌'], form.sup, true)+'</div>';
   }
   else if(t==='weight'){
@@ -705,7 +683,7 @@ function fieldsByType(){
   return h;
 }
 var CHIP_MAP = {
-  eaten:CN_TO_EATEN,
+  eaten:{'全部吃完':'yes','少量进食':'partial','拒食':'no'},
   complete:{'完整':'yes','不完整':'no','不清楚':'unk'},
   kind:{'排便':'feces','尿酸':'urate','排便+尿酸':'both','未排泄':'none'},
   normal:{'正常':'yes','异常':'no'}
@@ -731,7 +709,7 @@ function bindFields(){
       syncForm();
     };
   });
-  var ids = ['weight','svl','size','symptom','medicine','hot','cool','humidity','text'];
+  var ids = ['weight','svl','size','symptom','medicine','hot','cool','humidity','text','count'];
   ids.forEach(function(k){
     var el = $('#f_'+k); if(!el) return;
     el.oninput = function(){ form[k] = el.value; };
@@ -744,7 +722,7 @@ function saveRecord(){
   var v = {};
   if(form.type==='feed'){
     if(!form.food){ alert('请选择食物'); return; }
-    v = {food:form.food, size:form.size, eaten:form.eaten, sup:form.sup.slice()};
+    v = {food:form.food, count:num(form.count)||0, size:form.size, eaten:form.eaten, sup:form.sup.slice()};
   } else if(form.type==='weight'){
     var w=num(form.weight), s=num(form.svl);
     if(w==null && s==null){ alert('请填体重或体长'); return; }
@@ -872,12 +850,11 @@ function exportJSON(){
 }
 function exportCSV(){
   var nameMap = {}; S.pets.forEach(function(p){nameMap[p.id]=p.name;});
-  var rows = [['日期','时间','宠物','类型','内容','进食情况','备注']];
+  var rows = [['日期','时间','宠物','类型','内容','数量','备注']];
   S.records.slice().sort(function(a,b){return a.date<b.date?1:-1;}).forEach(function(r){
     var v=r.v||{};
-    var content = [v.food, v.size, v.weight!=null?v.weight+'g':null, v.svl?v.svl+'cm':null, v.symptom, v.event, v.text].filter(Boolean).join(' ');
-    var eaten = (r.type==='feed' && v.eaten) ? (EATEN_TO_CN[v.eaten]||'') : '';
-    rows.push([r.date, r.time||'', nameMap[r.petId]||'', TYPE_MAP[r.type]?TYPE_MAP[r.type].n:r.type, content, eaten, r.note||'']);
+    var content = [v.food, v.weight!=null?v.weight+'g':null, v.svl?v.svl+'cm':null, v.symptom, v.event, v.text].filter(Boolean).join(' ');
+    rows.push([r.date, r.time||'', nameMap[r.petId]||'', TYPE_MAP[r.type]?TYPE_MAP[r.type].n:r.type, content, v.count!=null?v.count:'', r.note||'']);
   });
   var csv = '\ufeff' + rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   download('爬宠记录_'+today()+'.csv', csv, 'text/csv;charset=utf-8');
@@ -910,59 +887,12 @@ window.onerror = function(msg, src, line){
 };
 try{
   load();
-  applyUrlIntent();   // 处理桌面快捷方式带过来的参数
   render();
 }catch(e){
   showErr('初始化失败：'+e.message);
   document.getElementById('view').innerHTML =
     '<div class="page"><div class="hd"><h1>爬宠管家</h1></div>'
     + '<div class="empty">初始化失败：'+esc(e.message)+'<br><br>请尝试换用 Chrome / Edge 最新版打开。</div></div>';
-}
-
-/* ---------- 桌面快捷方式意图 ----------
-   支持 index.html?a=add（直接弹出记录表单）和 ?t=stat（打开统计页） */
-function applyUrlIntent(){
-  try{
-    var q = location.search.replace(/^\?/,'');
-    if(!q) return;
-    var p = {};
-    q.split('&').forEach(function(kv){
-      var a = kv.split('='); p[decodeURIComponent(a[0])] = decodeURIComponent(a[1]||'');
-    });
-    if(p.t && ['home','log','stat','mine'].indexOf(p.t)>=0) UI.tab = p.t;
-    if(p.a === 'add') setTimeout(function(){ openForm('feed'); }, 260);
-  }catch(e){}
-}
-
-/* ---------- Service Worker 注册 ----------
-   只在 https / localhost 下注册。本地 file:// 打开时静默跳过，功能不受影响 */
-if('serviceWorker' in navigator && /^(https?:)$/.test(location.protocol)){
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js').then(function(reg){
-      // 发现新版本时自动接管，避免用户一直用旧缓存
-      reg.addEventListener('updatefound', function(){
-        var nw = reg.installing;
-        if(!nw) return;
-        nw.addEventListener('statechange', function(){
-          if(nw.state === 'installed' && navigator.serviceWorker.controller){
-            reg.waiting && reg.waiting.postMessage({type:'SKIP_WAITING'});
-          }
-        });
-      });
-    }).catch(function(err){
-      // 注册失败（比如 file:// 或不支持）不影响应用本身
-      if(window.console) console.warn('SW 注册失败：', err && err.message);
-    });
-  });
-  navigator.serviceWorker.addEventListener('controllerchange', function(){
-    // 新版本接管后刷新一次，保证用到最新代码
-    try{
-      if(!sessionStorage.getItem('sw_reloaded')){
-        sessionStorage.setItem('sw_reloaded','1');
-        location.reload();
-      }
-    }catch(e){ /* sessionStorage 不可用时忽略 */ }
-  });
 }
 })();
 </script>
