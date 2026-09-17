@@ -653,15 +653,19 @@ function viewMine(){
 
   h += '<div class="sec-t">数据</div>';
   h += '<div class="card" style="padding:6px 16px">';
-  h += rowBtn('导出备份 JSON','exportjson');
-  h += rowBtn('导入备份 JSON','importjson');
-  h += rowBtn('导出记录 CSV','exportcsv');
+  h += rowBtn('导出备份（复制文本）','exportjson');
+  h += rowBtn('导出记录 CSV（复制文本）','exportcsv');
+  h += rowBtn('导入备份（粘贴文本）','importjson');
   h += '</div>';
-  h += '<div class="small muted" style="margin:-4px 0 14px;line-height:1.7">数据只存在这台设备的浏览器里，不上传服务器。<b>手动「清除浏览数据」、卸载应用、长时间不用（尤其 iPhone）都可能导致数据被系统回收</b>，建议每两周导出一次备份，存到网盘或发给自己。</div>';
+  h += '<div class="small muted" style="margin:8px 0 14px;line-height:1.8">'
+     + '<b>备份与恢复全部通过复制／粘贴文本完成，不涉及任何文件下载或上传</b>，'
+     + '因此在手机网页、手机 App、电脑浏览器下操作方式完全一致，都能用。<br>'
+     + '备份<b>不含头像</b>，文本很小，可直接粘进备忘录或微信收藏。头像只存本机，换设备后重新设置即可。<br>'
+     + '数据只存在这台设备，不上传服务器。<b>清除浏览数据、卸载应用、长期不用（尤其 iPhone）都可能导致数据丢失</b>，建议每两周备份一次。</div>';
 
   h += '<div class="sec-t">关于</div>';
   h += '<div class="card small muted" style="line-height:1.9">'
-    + '爬宠管家 · v1.2（单文件本地版）<br>'
+    + '爬宠管家 · v1.6（单文件本地版）<br>'
     + '无任何联网请求，所有数据保存在本机 localStorage。<br>'
     + '把这个文件放在手机里用浏览器打开即可离线使用。<br>'
     + '已部署为 PWA 时，从桌面图标打开即为全屏体验，断网可用。'
@@ -710,7 +714,7 @@ function act(a, d){
               : '系统未批准。建议把 App 添加到主屏幕后重试，并保持每两周导出一次备份。');
     }).catch(function(e){ alert('申请失败：'+e.message); });
   }
-  else if(a==='importjson'){ importJSON(); }
+  else if(a==='importjson'){ importBackup(); }
   else if(a==='exportcsv'){ exportCSV(); }
   else if(a==='wipe'){
     if(!confirm('将清空所有宠物与记录，且无法恢复。建议先导出备份。确定继续？')) return;
@@ -888,14 +892,92 @@ function petHTML(){
   h += '<div class="grid2"><div class="field"><label>出生日期</label><input type="date" id="p_birth" value="'+esc(f.birth)+'"></div>';
   h += '<div class="field"><label>入手日期</label><input type="date" id="p_acquire" value="'+esc(f.acquire)+'"></div></div>';
   h += '<div class="field"><label>目标喂食间隔（天）</label><input type="number" id="p_interval" value="'+f.interval+'" min="1"><div class="small muted" style="margin-top:4px">超过这个天数会在首页标红提醒</div></div>';
-  h += '<div class="field"><label>头像</label><div class="row"><input type="file" id="p_file" accept="image/*" style="font-size:12px">'
-     + '<button class="pill" data-p="rmav">移除</button></div>'
-     + '<div id="p_av" style="margin-top:8px">'+(f.avatar?'<img src="'+f.avatar+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover">':'')+'</div></div>';
+  h += '<div class="field"><label>头像（可选）</label>'
+     + '<div id="p_drop" style="border:1px dashed var(--line);border-radius:12px;padding:14px;text-align:center">'
+     + '<input type="file" id="p_file" accept="image/*" style="font-size:12px;max-width:100%">'
+     + '<div class="small muted" style="margin-top:6px;line-height:1.7">手机：点上面的按钮拍照或从相册选<br>电脑：可把图片<b>拖到这里</b></div>'
+     + '</div>'
+     + '<div style="margin-top:10px"><button class="pill" data-p="rmav">移除头像</button></div>'
+     + '<div id="p_av" style="margin-top:10px"></div>'
+     + '<div class="small muted" style="margin-top:6px;line-height:1.7">自动裁剪为正方形并压缩到几 KB，不占空间。头像只存本机，不进备份。</div></div>';
   h += '<button class="btn" id="p_save" style="margin-top:6px">保存</button>';
   if(petForm.id) h += '<button class="btn dg" id="p_del" style="margin-top:10px">删除这只宠物及其全部记录</button>';
   h += '</div>';
   return h;
 }
+/* ---------- 头像处理 ----------
+   目标：无论原图多大，都压到一张很小的方图，
+   避免撑爆 localStorage（一般配额 5MB）。 */
+var AV_SIZE = 144;      // 输出边长（显示最大 56px，144 足够清晰）
+var AV_MAX  = 60000;    // base64 字符上限，约 45KB 实际体积
+
+function compressAvatar(img){
+  var side = Math.min(img.width, img.height);
+  var sx = (img.width - side)/2, sy = (img.height - side)/2;
+  var q = 0.72, out = '';
+  for(var i=0;i<5;i++){
+    var c = document.createElement('canvas');
+    c.width = AV_SIZE; c.height = AV_SIZE;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,AV_SIZE,AV_SIZE);  // JPEG 无透明，补白底
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, AV_SIZE, AV_SIZE);
+    out = c.toDataURL('image/jpeg', q);
+    if(out.length <= AV_MAX) break;
+    q -= 0.12;
+    if(q < 0.3) q = 0.3;
+  }
+  return out;
+}
+/* 渲染头像预览 + 体积提示 */
+function renderAv(){
+  var box = document.getElementById('p_av');
+  if(!box) return;
+  var a = petForm.avatar;
+  if(!a){ box.innerHTML = '<div class="small muted">未设置头像（可选）</div>'; return; }
+  var kb = Math.round(a.length*0.75/1024);
+  box.innerHTML = '<div style="display:flex;align-items:center;gap:12px">'
+    + '<img src="'+a+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover;flex:0 0 auto">'
+    + '<div class="small muted" style="line-height:1.7">已设置 · 约 '+kb+' KB<br>'
+    + '头像仅存本机，<b>不包含在备份文件中</b></div></div>';
+}
+function setAvHint(t){
+  var box = document.getElementById('p_av');
+  if(box && t) box.innerHTML = '<div class="small muted">'+esc(t)+'</div>';
+}
+
+/* 处理选中的图片文件（相册选择、拍照、拖拽共用） */
+function handleAvatarFile(f){
+  if(!f) return;
+  if(f.size > 15*1024*1024){
+    alert('图片过大（'+Math.round(f.size/1024/1024)+'MB），请选一张小一些的。');
+    return;
+  }
+  setAvHint('处理中…');
+  var rd = new FileReader();
+  rd.onerror = function(){
+    setAvHint('');
+    alert('读取图片失败，请重试或换一张。');
+  };
+  rd.onload = function(){
+    var img = new Image();
+    img.onerror = function(){
+      setAvHint('');
+      alert('无法识别这个图片格式，请换一张 JPG / PNG。');
+    };
+    img.onload = function(){
+      try{
+        petForm.avatar = compressAvatar(img);
+        renderAv();
+      }catch(err){
+        setAvHint('');
+        alert('图片处理失败：'+(err && err.message ? err.message : err));
+      }
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+}
+
 function bindPet(){
   var map = {name:'p_name',morph:'p_morph',birth:'p_birth',acquire:'p_acquire',interval:'p_interval'};
   Object.keys(map).forEach(function(k){ var el=$('#'+map[k]); el.oninput=el.onchange=function(){ petForm[k]=el.value; }; });
@@ -906,25 +988,26 @@ function bindPet(){
   };
   $('#p_gender').onchange = function(){ petForm.gender = this.value; };
   $('#p_file').onchange = function(e){
-    var f = e.target.files[0]; if(!f) return;
-    var rd = new FileReader();
-    rd.onload = function(){
-      var img = new Image();
-      img.onload = function(){
-        var c=document.createElement('canvas'), S=160;
-        var side=Math.min(img.width,img.height);
-        c.width=S;c.height=S;
-        c.getContext('2d').drawImage(img,(img.width-side)/2,(img.height-side)/2,side,side,0,0,S,S);
-        petForm.avatar = c.toDataURL('image/jpeg',0.72);
-        $('#p_av').innerHTML = '<img src="'+petForm.avatar+'" style="width:56px;height:56px;border-radius:50%;object-fit:cover">';
-        if(petForm.avatar.length>260000) alert('图片较大，可能占用较多存储空间，建议换一张小图。');
-      };
-      img.src = rd.result;
-    };
-    rd.readAsDataURL(f);
+    var f = e.target.files && e.target.files[0];
+    if(f) handleAvatarFile(f);
+    e.target.value = '';   // 清空，允许连续选同一张
   };
   var rm = $('[data-p="rmav"]');
-  if(rm) rm.onclick = function(){ petForm.avatar=''; $('#p_av').innerHTML=''; };
+  if(rm) rm.onclick = function(){ petForm.avatar=''; renderAv(); };
+  renderAv();
+
+  /* 电脑端：支持把图片文件拖到虚线框里 */
+  var drop = document.getElementById('p_drop');
+  if(drop){
+    var stop = function(e){ e.preventDefault(); e.stopPropagation(); };
+    drop.addEventListener('dragover', function(e){ stop(e); drop.style.borderColor = 'var(--fg)'; });
+    drop.addEventListener('dragleave', function(e){ stop(e); drop.style.borderColor = ''; });
+    drop.addEventListener('drop', function(e){
+      stop(e); drop.style.borderColor = '';
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(f) handleAvatarFile(f);
+    });
+  }
   $('#p_save').onclick = function(){
     if(!petForm.name.trim()){ alert('请填写名字'); return; }
     petForm.interval = parseInt(petForm.interval,10)||3;
@@ -961,53 +1044,187 @@ function closeSheet(){
 $('#sheetbg').onclick = closeSheet;
 
 /* =========================================================
-   导入导出
+   导入导出（纯文本复制 / 粘贴，不产生任何文件读写）
+
+   设计原则：备份与恢复完全不经过文件系统，只用「复制文本 / 粘贴文本」。
+   这样在手机网页、手机 PWA、电脑浏览器、电脑 PWA 下行为完全一致，
+   不受下载管理器与文件选择器限制的影响。
+
+   全应用唯一的文件操作是「头像上传」，已单独做兼容处理。
    ========================================================= */
-function download(name, content, mime){
-  var blob = new Blob([content], {type:mime||'application/octet-stream'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url; a.download = name; document.body.appendChild(a); a.click();
-  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+
+/* 选中文本域里的全部内容（iOS 需要 setSelectionRange 才能拉起全选） */
+function selectAll(ta){
+  try{
+    ta.removeAttribute('readonly');
+    ta.focus();
+    if(ta.setSelectionRange) ta.setSelectionRange(0, ta.value.length);
+    else ta.select();
+    if(document.execCommand) { try{ document.execCommand('selectAll'); }catch(e){} }
+  }catch(e){}
 }
+/* 复制到剪贴板：优先新 API，失败回退到 execCommand */
+function copyText(text){
+  return new Promise(function(resolve){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ resolve(true); })
+        .catch(function(){ resolve(legacyCopy(text)); });
+    }else{
+      resolve(legacyCopy(text));
+    }
+  });
+}
+function legacyCopy(text){
+  try{
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly','readonly');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);       // 必须入 DOM，否则 iOS 选不中
+    selectAll(ta);
+    var ok = false;
+    try{ ok = document.execCommand('copy'); }catch(e){}
+    try{ document.body.removeChild(ta); }catch(e){}
+    return ok;
+  }catch(e){ return false; }
+}
+
+/* 导出面板：显示可复制的文本 */
+function showExportPanel(opt){
+  var h = '<h3>'+esc(opt.title)+'</h3>';
+  h += '<div class="small muted" style="margin:6px 0 12px;line-height:1.8">'
+     + esc(opt.desc || '复制下面的内容，粘贴到备忘录、微信文件助手或网盘里保存；恢复时在「导入备份」里粘贴回来即可。')
+     + '</div>';
+  if(opt.tip){
+    h += '<div class="small" style="margin-bottom:10px;padding:9px 11px;background:var(--fill);border-radius:9px;line-height:1.7;color:var(--fg2)">'+opt.tip+'</div>';
+  }
+  h += '<textarea id="tp_text" readonly style="min-height:200px;font-size:11.5px;line-height:1.5">'+esc(opt.content)+'</textarea>';
+  h += '<div class="row small muted" style="margin-top:8px"><span>共 '+opt.content.length+' 字符</span><span>'+esc(opt.sizeText||'')+'</span></div>';
+  h += '<button class="btn" id="tp_copy" style="margin-top:12px">复制全部内容</button>';
+  h += '<button class="btn gh" id="tp_done" style="margin-top:10px">完成</button>';
+  sheet(h, true);
+
+  var ta = document.getElementById('tp_text');
+  document.getElementById('tp_copy').onclick = function(){
+    selectAll(ta);
+    copyText(opt.content).then(function(ok){
+      if(!ok){
+        alert('自动复制没成功。请手动长按（或全选）上方文本框复制内容。');
+      }else{
+        var b = document.getElementById('tp_copy');
+        if(b){ b.textContent = '已复制 ✓'; setTimeout(function(){ b.textContent = '复制全部内容'; }, 1800); }
+      }
+      opt.afterCopy && opt.afterCopy();
+    });
+  };
+  document.getElementById('tp_done').onclick = function(){ closeSheet(); };
+}
+
+/* 导入面板：粘贴文本恢复 */
+function showImportPanel(){
+  var h = '<h3>导入备份</h3>';
+  h += '<div class="small muted" style="margin:6px 0 12px;line-height:1.8">'
+     + '在备忘录、微信或网盘里打开之前保存的备份，<b>全选复制</b>后粘贴到下面，点「导入」即可恢复。<br>'
+     + '注意：导入会<b>覆盖</b>当前全部数据。'
+     + '</div>';
+  h += '<textarea id="pp_text" placeholder="在此粘贴备份内容（以 { 开头的那段文本）…" style="min-height:180px;font-size:11.5px"></textarea>';
+  h += '<button class="btn" id="pp_ok" style="margin-top:12px">导入</button>';
+  h += '<button class="btn gh" id="pp_cancel" style="margin-top:10px">取消</button>';
+  sheet(h, true);
+  var ta = document.getElementById('pp_text');
+  document.getElementById('pp_ok').onclick = function(){
+    var t = (ta.value || '').trim();
+    if(!t){ alert('请先粘贴备份内容'); return; }
+    closeSheet();
+    applyImport(t);
+  };
+  document.getElementById('pp_cancel').onclick = function(){ closeSheet(); };
+}
+
+/* ---------- 导出：JSON 备份（不含头像） ---------- */
 function exportJSON(){
-  download('爬宠管家备份_'+today()+'.json', JSON.stringify({version:1,exportedAt:new Date().toISOString(),pets:S.pets,records:S.records},null,1), 'application/json');
-  markBackedUp();          // 记录备份时间，首页据此提醒
-  if(UI.tab === 'home' || UI.tab === 'mine') render();
+  var pets = S.pets.map(function(p){
+    var c = {};
+    for(var k in p) if(Object.prototype.hasOwnProperty.call(p,k)) c[k] = p[k];
+    c.avatar = '';                    // 头像永远不进备份
+    return c;
+  });
+  var data = JSON.stringify({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    note: '爬宠管家备份 · 不含头像',
+    pets: pets,
+    records: S.records
+  }, null, 1);
+
+  showExportPanel({
+    title: '导出备份（复制文本）',
+    content: data,
+    sizeText: '约 '+Math.round(data.length/1024)+' KB',
+    tip: '备份<b>不含头像</b>，体积很小，方便粘贴保存。头像只存在本机，换设备后重新设置即可。',
+    afterCopy: function(){
+      markBackedUp();
+      if(UI.tab==='home' || UI.tab==='mine') render();
+    }
+  });
 }
+
+/* ---------- 导出：CSV 表格 ---------- */
 function exportCSV(){
-  var nameMap = {}; S.pets.forEach(function(p){nameMap[p.id]=p.name;});
+  var nameMap = {}; S.pets.forEach(function(p){ nameMap[p.id] = p.name; });
   var rows = [['日期','时间','宠物','类型','内容','进食情况','备注']];
-  S.records.slice().sort(function(a,b){return a.date<b.date?1:-1;}).forEach(function(r){
-    var v=r.v||{};
-    var content = [v.food, v.size, v.weight!=null?v.weight+'g':null, v.svl?v.svl+'cm':null, v.symptom, v.event, v.text].filter(Boolean).join(' ');
+  S.records.slice().sort(function(a,b){ return a.date<b.date?1:-1; }).forEach(function(r){
+    var v = r.v || {};
+    var content = [v.food, v.size, v.weight!=null?v.weight+'g':null, v.svl?v.svl+'cm':null,
+                   v.symptom, v.event, v.text].filter(Boolean).join(' ');
     var eaten = (r.type==='feed' && v.eaten) ? (EATEN_TO_CN[v.eaten]||'') : '';
     rows.push([r.date, r.time||'', nameMap[r.petId]||'', TYPE_MAP[r.type]?TYPE_MAP[r.type].n:r.type, content, eaten, r.note||'']);
   });
-  var csv = '\ufeff' + rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
-  download('爬宠记录_'+today()+'.csv', csv, 'text/csv;charset=utf-8');
+  var csv = '\ufeff' + rows.map(function(r){
+    return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(',');
+  }).join('\n');
+
+  showExportPanel({
+    title: '导出 CSV（复制文本）',
+    content: csv,
+    sizeText: (S.records.length)+' 条记录',
+    desc: '复制后粘贴到 Excel / _numbers / 记事本即可查看。',
+    tip: 'CSV 是只读表格，<b>不能用于恢复数据</b>。需要恢复请用 JSON 备份。'
+  });
 }
-function importJSON(){
-  var inp = document.createElement('input');
-  inp.type='file'; inp.accept='.json,application/json';
-  inp.onchange = function(){
-    var f = inp.files[0]; if(!f) return;
-    var rd = new FileReader();
-    rd.onload = function(){
-      try{
-        var d = JSON.parse(rd.result);
-        if(!d.pets || !d.records) throw 0;
-        if(!confirm('导入 '+d.pets.length+' 只宠物、'+d.records.length+' 条记录？\n\n选择「确定」= 覆盖当前全部数据；如需保留请先导出备份。')) return;
-        S.pets = d.pets; S.records = d.records;
-        UI.petId = S.pets[0]?S.pets[0].id:null;
-        markBackedUp();   // 刚导入的数据与备份一致，重置提醒
-        save(); render(); alert('导入成功');
-      }catch(e){ alert('文件格式不正确，请选择本应用导出的 JSON 备份。'); }
-    };
-    rd.readAsText(f);
-  };
-  inp.click();
+
+/* ---------- 导入：解析并应用 ---------- */
+function applyImport(text){
+  try{
+    var d = JSON.parse(text);
+    if(!d || !d.pets || !d.records) throw new Error('缺少必要字段');
+    if(!confirm('导入 '+d.pets.length+' 只宠物、'+d.records.length+' 条记录？\n\n确定 = 覆盖当前全部数据。')) return;
+
+    // 备份不含头像，尽量沿用本机已有的
+    var localAv = {};
+    S.pets.forEach(function(p){ if(p.avatar) localAv[p.id] = p.avatar; });
+    var kept = 0, none = 0;
+    d.pets.forEach(function(p){
+      if(p.avatar){ return; }                       // 万一备份里有，尊重它
+      if(localAv[p.id]){ p.avatar = localAv[p.id]; kept++; }
+      else { p.avatar = ''; none++; }
+    });
+
+    S.pets = d.pets; S.records = d.records;
+    UI.petId = S.pets[0] ? S.pets[0].id : null;
+    markBackedUp();
+    save(); render();
+    var tip = '导入成功';
+    if(kept) tip += '\n\n已保留本机已有的 '+kept+' 张头像。';
+    if(none) tip += (kept?'':'\n\n') + '有 '+none+' 只宠物没有头像，可在档案里重新设置。';
+    alert(tip);
+  }catch(e){
+    alert('没能识别出备份内容。\n\n请确认粘贴的是完整的备份文本（通常以 { 开头、以 } 结尾），没有缺行或被截断。');
+  }
 }
+function importBackup(){ showImportPanel(); }
 
 /* ---------- 启动 ---------- */
 window.onerror = function(msg, src, line){
