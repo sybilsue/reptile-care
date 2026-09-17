@@ -66,10 +66,21 @@
 
 部署后手机访问网址即可「安装应用」，获得**桌面图标、全屏无地址栏、断网可用**的完整体验。
 
-1. GitHub 新建公开仓库
-2. 上传仓库内的全部文件（`index.html` 必须在根目录）
-3. Settings → Pages → Source 选 `Deploy from a branch` → 分支 `main`、目录 `/ (root)` → Save
+#### A. Fork 一键部署
+
+1. 点本页右上角 **Fork** → Create fork，会在你账号下生成完整副本
+2. 进入 fork 出来的仓库 → **Settings** → **Pages**
+3. Source 选 `Deploy from a branch` → 分支 `main`、目录 `/ (root)` → **Save**
 4. 等 1~3 分钟，访问 `https://你的用户名.github.io/仓库名/`
+
+> Fork 后需要手动开启 Pages，这项设置不会从原仓库自动继承。
+> 以后原项目更新时，可在本仓库页点 **Sync fork** 同步。
+
+#### B. 手动部署
+
+1. 新建公开仓库
+2. 上传本仓库全部文件（`index.html` 必须在根目录）
+3. Settings → Pages → 同上配置
 
 **安装到手机**
 
