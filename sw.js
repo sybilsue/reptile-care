@@ -4,7 +4,7 @@
    - 静态资源：缓存优先 —— 断网也能秒开
    更新方式：修改下面的 VERSION 即可强制全量刷新缓存
 */
-var VERSION = 'pc-v1.6.0';
+var VERSION = 'pc-v1.8.0';
 var CACHE = 'reptile-care-' + VERSION;
 
 /* 需要预缓存的文件（注意是相对路径，适配 GitHub Pages 的 /仓库名/ 子目录） */

@@ -660,12 +660,13 @@ function viewMine(){
   h += '<div class="small muted" style="margin:8px 0 14px;line-height:1.8">'
      + '<b>备份与恢复全部通过复制／粘贴文本完成，不涉及任何文件下载或上传</b>，'
      + '因此在手机网页、手机 App、电脑浏览器下操作方式完全一致，都能用。<br>'
+     + '导出提供<b>紧凑格式</b>（一行一条记录，体积比 JSON 小约 80%）与 JSON 两种，导入时自动识别。<br>'
      + '备份<b>不含头像</b>，文本很小，可直接粘进备忘录或微信收藏。头像只存本机，换设备后重新设置即可。<br>'
      + '数据只存在这台设备，不上传服务器。<b>清除浏览数据、卸载应用、长期不用（尤其 iPhone）都可能导致数据丢失</b>，建议每两周备份一次。</div>';
 
   h += '<div class="sec-t">关于</div>';
   h += '<div class="card small muted" style="line-height:1.9">'
-    + '爬宠管家 · v1.6（单文件本地版）<br>'
+    + '爬宠管家 · v1.8（单文件本地版）<br>'
     + '无任何联网请求，所有数据保存在本机 localStorage。<br>'
     + '把这个文件放在手机里用浏览器打开即可离线使用。<br>'
     + '已部署为 PWA 时，从桌面图标打开即为全屏体验，断网可用。'
@@ -1092,24 +1093,320 @@ function legacyCopy(text){
 }
 
 /* 导出面板：显示可复制的文本 */
+/* =========================================================
+   备份文本编解码
+
+   两种格式并存，导入时自动识别：
+     compact —— 行式紧凑文本。一行一条记录，宠物用序号引用，
+                体积最小，适合微信 / 备忘录传输。内容不可读，但信息完全等效。
+     json    —— 标准 JSON。含完整字段名，便于人工查看、修改与迁移，但体积大。
+
+   紧凑格式行定义：
+     RC2|导出时间|宠物数|记录数
+     P|名字|物种|品系|性别|出生|入手|喂食间隔
+     TAG|日期|时间|宠物序号|备注|<类型专属字段…>
+   尾部空字段会自动裁剪；字段内的 | 与换行用反斜杠转义。
+   ========================================================= */
+var BK_TAG = 'RC4';                  /* 当前写入版本 */
+var BK_TAGS = ['RC4','RC3','RC2'];   /* 可解析版本：RC4 全压缩 / RC3 仅枚举 / RC2 纯文本 */
+var D_EPOCH = Date.UTC(2020,0,1);    /* 日期基准点 */
+
+/* ---------- 枚举编码表 ----------
+   规则：只增不改、不重排。新增选项一律追加到末尾，
+   这样旧备份里的代码在新版中含义不变。
+   表里没有的值（用户自定义 / 未来新增）以 ~ 前缀原样存储。 */
+var C_FOOD = {
+  '果泥 CGD':'a','蟋蟀':'b','杜比亚':'c','面包虫':'d','樱桃蟑螂':'e','大麦虫':'f',
+  '乳鼠·粉皮':'g','乳鼠·小白':'h','乳鼠·白霜':'i','乳鼠·亚成':'j','乳鼠·成鼠':'k',
+  '油麦菜':'l','狗粮':'m','蜗牛':'n','蔬菜':'o','蓝舌粮':'p','角蛙粮':'q',
+  '牧草':'r','龟粮':'s','蒲公英':'t','其他':'u'
+};
+var C_EATEN  = {'yes':'y','mostly':'m','partial':'p','no':'n'};
+var C_SHED   = {'yes':'y','no':'n','unk':'u'};
+var C_PKIND  = {'feces':'f','urate':'r','both':'b','none':'x'};
+var C_NORMAL = {'yes':'y','no':'n'};
+var C_EVENT  = {'交配':'a','产卵':'b','孵化':'c','拒食期':'d','其他':'e'};
+var C_SPECIES= {'睫角守宫':'a','豹纹守宫':'b','玉米蛇':'c','球蟒':'d','鬃狮蜥':'e',
+                '蓝舌石龙子':'f','角蛙':'g','苏卡达陆龟':'h','捕鸟蛛':'i','其他':'j'};
+var C_GENDER = {'未知':'u','公':'m','母':'f'};
+/* 添加剂用位掩码：一个数字表示多选组合 */
+var B_SUP = {'钙粉':1,'D3':2,'维生素':4,'益生菌':8};
+
+/* 反向表（供解码用） */
+var R_FOOD={},R_EATEN={},R_SHED={},R_PKIND={},R_NORMAL={},R_EVENT={},R_SPECIES={},R_GENDER={};
+(function(){
+  function rev(src,dst){ for(var k in src) if(src.hasOwnProperty(k)) dst[src[k]]=k; }
+  rev(C_FOOD,R_FOOD); rev(C_EATEN,R_EATEN); rev(C_SHED,R_SHED);
+  rev(C_PKIND,R_PKIND); rev(C_NORMAL,R_NORMAL); rev(C_EVENT,R_EVENT);
+  rev(C_SPECIES,R_SPECIES); rev(C_GENDER,R_GENDER);
+})();
+
+/* 编码：命中代码表就用代码，否则 ~ 前缀原样保存 */
+function bkEnc(tbl, v){
+  v = (v===null||v===undefined) ? '' : String(v);
+  if(v==='') return '';
+  var c = tbl[v];
+  return (c!==undefined) ? c : ('~'+v);
+}
+/* 解码：~ 前缀为原样值，否则查表；代码不认识则退回原字符串 */
+function bkDec(tbl, s, dflt){
+  s = (s===null||s===undefined) ? '' : String(s);
+  if(s==='') return dflt===undefined?'':dflt;
+  if(s.charAt(0)==='~') return s.slice(1);
+  var v = tbl[s];
+  return (v!==undefined) ? v : s;
+}
+/* ---------- 日期 / 时间压缩 ----------
+   日期：距 2020-01-01 的天数，36 进制（2026-09-17 → 1wd，约 3 字符）
+   时间：当日分钟数，36 进制（11:30 → j6；空则留空）
+   无法解析时用 ~ 前缀原样保存 */
+function b36(n){ return (n<0?'-':'') + Math.abs(n).toString(36); }
+function un36(s){
+  if(!s) return NaN;
+  var neg = s.charAt(0)==='-';
+  var v = parseInt(neg ? s.slice(1) : s, 36);
+  return isNaN(v) ? NaN : (neg ? -v : v);
+}
+function encDate(ds){
+  ds = (ds===null||ds===undefined) ? '' : String(ds);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return ds ? ('~'+ds) : '';
+  var y=+ds.slice(0,4), m=+ds.slice(5,7), d=+ds.slice(8,10);
+  if(m<1||m>12||d<1||d>31) return '~'+ds;
+  return b36(Math.round((Date.UTC(y,m-1,d)-D_EPOCH)/86400000));
+}
+function decDate(c){
+  c = (c===null||c===undefined) ? '' : String(c);
+  if(!c) return '';
+  if(c.charAt(0)==='~') return c.slice(1);
+  var n = un36(c);
+  if(isNaN(n)) return c;
+  var t = new Date(D_EPOCH + n*86400000);
+  var mm = t.getUTCMonth()+1, dd = t.getUTCDate();
+  return t.getUTCFullYear()+'-'+(mm<10?'0':'')+mm+'-'+(dd<10?'0':'')+dd;
+}
+function encTime(ts){
+  ts = (ts===null||ts===undefined) ? '' : String(ts);
+  if(!ts) return '';
+  var m = ts.match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return '~'+ts;
+  return b36((+m[1])*60 + (+m[2]));
+}
+function decTime(c){
+  c = (c===null||c===undefined) ? '' : String(c);
+  if(!c) return '';
+  if(c.charAt(0)==='~') return c.slice(1);
+  var n = un36(c);
+  if(isNaN(n) || n<0 || n>=1440) return c;
+  var h = Math.floor(n/60), mi = n%60;
+  return (h<10?'0':'')+h+':'+(mi<10?'0':'')+mi;
+}
+function bkSupEnc(arr){
+  if(!arr || !arr.length) return '';
+  var m=0, ok=true;
+  arr.forEach(function(x){ if(B_SUP[x]!==undefined) m|=B_SUP[x]; else ok=false; });
+  if(!ok) return '~'+arr.join(',');
+  return String(m);
+}
+function bkSupDec(s){
+  s = (s===null||s===undefined) ? '' : String(s);
+  if(!s) return [];
+  if(s.charAt(0)==='~') return s.slice(1) ? s.slice(1).split(',') : [];
+  var m=parseInt(s,10);
+  if(isNaN(m)||m<=0) return [];
+  var out=[];
+  for(var k in B_SUP) if(B_SUP.hasOwnProperty(k) && (m & B_SUP[k])) out.push(k);
+  return out;
+}
+
+function escField(s){
+  s = (s===null || s===undefined) ? '' : String(s);
+  return s.replace(/\\/g,'\\\\').replace(/\|/g,'\\|').replace(/\r/g,'').replace(/\n/g,'\\n');
+}
+function unescField(s){
+  if(!s) return '';
+  return s.replace(/\\n/g,'\n').replace(/\\\|/g,'|').replace(/\\\\/g,'\\');
+}
+/* 按未被反斜杠转义的 | 切分 */
+function splitLine(line){
+  var out=[], cur='', i=0;
+  while(i<line.length){
+    var c=line[i];
+    if(c==='\\'){ cur += c + (line[i+1]||''); i+=2; continue; }
+    if(c==='|'){ out.push(cur); cur=''; i++; continue; }
+    cur += c; i++;
+  }
+  out.push(cur);
+  return out;
+}
+function bkStr(v){ return (v===null||v===undefined) ? '' : String(v); }
+function bkNum(v){ if(v===''||v===null||v===undefined) return null; var n=parseFloat(v); return isNaN(n)?null:n; }
+
+/* 生成紧凑行式备份 */
+function buildCompact(){
+  var idx = {};
+  S.pets.forEach(function(p,i){ idx[p.id]=i; });
+  var L = [];
+  L.push(BK_TAG+'|'+new Date().toISOString()+'|'+S.pets.length+'|'+S.records.length);
+  S.pets.forEach(function(p){
+    L.push(['P', bkStr(p.name), bkEnc(C_SPECIES,p.species), bkStr(p.morph), bkEnc(C_GENDER,p.gender),
+            encDate(p.birth), encDate(p.acquire), bkStr(p.interval)].map(escField).join('|'));
+  });
+  S.records.slice().sort(function(a,b){
+    return a.date<b.date?1:(a.date>b.date?-1:0);
+  }).forEach(function(r){
+    var v=r.v||{}, pi=idx[r.petId];
+    if(pi===undefined) pi=0;
+    var f;
+    var rd = encDate(r.date), rt = encTime(r.time);
+    if(r.type==='feed')        f=['F',rd,rt,pi,r.note,bkEnc(C_FOOD,v.food),bkStr(v.size),bkEnc(C_EATEN,v.eaten),bkSupEnc(v.sup)];
+    else if(r.type==='weight') f=['W',rd,rt,pi,r.note,bkNum(v.weight),bkNum(v.svl)];
+    else if(r.type==='shed')   f=['S',rd,rt,pi,r.note,bkEnc(C_SHED,v.complete)];
+    else if(r.type==='poop')   f=['D',rd,rt,pi,r.note,bkEnc(C_PKIND,v.kind),bkEnc(C_NORMAL,v.normal)];
+    else if(r.type==='health') f=['H',rd,rt,pi,r.note,bkStr(v.symptom),bkStr(v.medicine),v.vet?'1':''];
+    else if(r.type==='env')    f=['E',rd,rt,pi,r.note,bkNum(v.hot),bkNum(v.cool),bkNum(v.humidity)];
+    else if(r.type==='breed')  f=['B',rd,rt,pi,r.note,bkEnc(C_EVENT,v.event)];
+    else                       f=['N',rd,rt,pi,r.note,bkStr(v.text)];
+    // 裁剪尾部空字段（至少保留到备注位）
+    while(f.length>4 && (f[f.length-1]===''||f[f.length-1]===null||f[f.length-1]===undefined)) f.pop();
+    L.push(f.map(escField).join('|'));
+  });
+  return L.join('\n');
+}
+
+/* 生成 JSON 备份（不含头像） */
+function buildJSON(pretty){
+  var pets = S.pets.map(function(p){
+    var c={};
+    for(var k in p) if(Object.prototype.hasOwnProperty.call(p,k)) c[k]=p[k];
+    c.avatar='';
+    return c;
+  });
+  return JSON.stringify({
+    version:1, exportedAt:new Date().toISOString(),
+    note:'爬宠管家备份 · 不含头像', pets:pets, records:S.records
+  }, null, pretty?1:0);
+}
+
+/* 解析紧凑行式备份 */
+function parseCompact(text){
+  var lines = text.split(/\r?\n/).map(function(l){ return l.replace(/\s+$/,''); })
+                  .filter(function(l){ return l!==''; });
+  if(!lines.length) throw new Error('内容为空');
+  var ver = 2;                                  /* 2=纯文本 3=枚举 4=枚举+日期压缩 */
+  if(lines[0].indexOf('RC4|')===0) ver=4;
+  else if(lines[0].indexOf('RC3|')===0) ver=3;
+  else if(lines[0].indexOf('RC2|')===0) ver=2;
+  else throw new Error('不是受支持的备份格式');
+  var isV3 = (ver>=3);
+  var isV4 = (ver>=4);
+  var head = splitLine(lines[0]);
+  var declared = { pets: parseInt(head[2],10), records: parseInt(head[3],10) };
+  var pets=[], ids=[], records=[];
+  for(var i=1;i<lines.length;i++){
+    var f = splitLine(lines[i]).map(unescField);
+    var tag = f[0];
+    if(tag==='P'){
+      var id=uid(); ids.push(id);
+      var sp = isV3 ? bkDec(R_SPECIES,f[2],'其他') : (f[2]||'其他');
+      var gd = isV3 ? bkDec(R_GENDER,f[4],'未知') : (f[4]||'未知');
+      pets.push({id:id, name:f[1]||'未命名', species:sp, morph:f[3]||'',
+        gender:gd,
+        birth: isV4?decDate(f[5]):(f[5]||''),
+        acquire: isV4?decDate(f[6]):(f[6]||''),
+        interval:parseInt(f[7],10)||3, avatar:'', createdAt:Date.now()});
+      continue;
+    }
+    var date = isV4 ? (decDate(f[1])||today()) : (f[1]||today());
+    var time = isV4 ? decTime(f[2]) : (f[2]||'');
+    var pi=parseInt(f[3],10); if(isNaN(pi)) pi=0;
+    var petId = ids[pi]!==undefined ? ids[pi] : (ids[0]!==undefined ? ids[0] : uid());
+    var note=f[4]||'', v={}, type=null;
+    if(tag==='F'){      type='feed';
+                        v={ food: isV3?bkDec(R_FOOD,f[5],''):(f[5]||''),
+                            size: f[6]||'',
+                            eaten: isV3?bkDec(R_EATEN,f[7],'yes'):(f[7]||'yes'),
+                            sup: isV3?bkSupDec(f[8]):(f[8]?f[8].split(','):[]) }; }
+    else if(tag==='W'){ type='weight'; v={weight:bkNum(f[5]), svl:bkNum(f[6])}; }
+    else if(tag==='S'){ type='shed';   v={complete: isV3?bkDec(R_SHED,f[5],'unk'):(f[5]||'unk')}; }
+    else if(tag==='D'){ type='poop';   v={kind: isV3?bkDec(R_PKIND,f[5],'feces'):(f[5]||'feces'),
+                                          normal: isV3?bkDec(R_NORMAL,f[6],'yes'):(f[6]||'yes')}; }
+    else if(tag==='H'){ type='health'; v={symptom:f[5]||'', medicine:f[6]||'', vet:f[7]==='1'}; }
+    else if(tag==='E'){ type='env';    v={hot:bkNum(f[5]), cool:bkNum(f[6]), humidity:bkNum(f[7])}; }
+    else if(tag==='B'){ type='breed';  v={event: isV3?bkDec(R_EVENT,f[5],'交配'):(f[5]||'交配')}; }
+    else if(tag==='N'){ type='note';   v={text:f[5]||''}; }
+    else continue;
+    records.push({id:uid(), petId:petId, type:type, date:date, time:time,
+      v:v, note:note, createdAt:Date.now()});
+  }
+  return {pets:pets, records:records, declared:declared};
+}
+
 function showExportPanel(opt){
+  var modes = [];
+  if(opt.compact) modes.push({k:'compact', n:'紧凑格式（推荐）', v:opt.compact});
+  if(opt.json)    modes.push({k:'json',    n:'JSON 格式',      v:opt.json});
+  if(opt.content) modes.push({k:'raw',     n:'文本',           v:opt.content});
+  if(!modes.length) return;
+  var cur = 0;
+
   var h = '<h3>'+esc(opt.title)+'</h3>';
   h += '<div class="small muted" style="margin:6px 0 12px;line-height:1.8">'
-     + esc(opt.desc || '复制下面的内容，粘贴到备忘录、微信文件助手或网盘里保存；恢复时在「导入备份」里粘贴回来即可。')
+     + (opt.desc || '复制下面的内容，粘贴到备忘录、微信文件助手或网盘里保存；恢复时在「导入备份」里粘贴回来即可。')
      + '</div>';
-  if(opt.tip){
+
+  if(modes.length>1){
+    h += '<div class="seg" id="exp_seg" style="margin-bottom:10px">';
+    modes.forEach(function(m,i){ h += '<button data-m="'+i+'" class="'+(i===0?'on':'')+'">'+m.n+'</button>'; });
+    h += '</div>';
+    h += '<div class="small" id="exp_hint" style="margin-bottom:10px;padding:9px 11px;background:var(--fill);border-radius:9px;line-height:1.7;color:var(--fg2)"></div>';
+  }else if(opt.tip){
     h += '<div class="small" style="margin-bottom:10px;padding:9px 11px;background:var(--fill);border-radius:9px;line-height:1.7;color:var(--fg2)">'+opt.tip+'</div>';
   }
-  h += '<textarea id="tp_text" readonly style="min-height:200px;font-size:11.5px;line-height:1.5">'+esc(opt.content)+'</textarea>';
-  h += '<div class="row small muted" style="margin-top:8px"><span>共 '+opt.content.length+' 字符</span><span>'+esc(opt.sizeText||'')+'</span></div>';
+
+  h += '<textarea id="tp_text" readonly style="min-height:190px;font-size:11.5px;line-height:1.5">'+esc(modes[0].v)+'</textarea>';
+  h += '<div class="row small muted" style="margin-top:8px"><span id="exp_len"></span><span id="exp_warn" style="color:var(--warn)"></span></div>';
   h += '<button class="btn" id="tp_copy" style="margin-top:12px">复制全部内容</button>';
   h += '<button class="btn gh" id="tp_done" style="margin-top:10px">完成</button>';
   sheet(h, true);
 
   var ta = document.getElementById('tp_text');
+  var lenEl = document.getElementById('exp_len');
+  var warnEl = document.getElementById('exp_warn');
+  var hintEl = document.getElementById('exp_hint');
+
+  function setMode(i){
+    cur = i;
+    ta.value = modes[i].v;
+    var n = modes[i].v.length;
+    if(lenEl) lenEl.textContent = '共 '+n+' 字符 · 约 '+Math.round(n/1024)+' KB';
+    if(warnEl) warnEl.textContent = n>12000 ? '内容较长，可分次复制' : '';
+    if(hintEl){
+      if(modes[i].k==='compact' && opt.json){
+        var pct = Math.max(0, Math.round((1 - opt.compact.length/opt.json.length)*100));
+        hintEl.innerHTML = '一行一条记录，比 JSON 少约 <b>'+pct+'%</b> 字符。'
+          + '内容不易直接阅读，但导入后完全等效，记录多时建议用它。';
+      }else if(modes[i].k==='json'){
+        hintEl.innerHTML = '含完整字段名，便于人工查看与修改，但体积明显更大。';
+      }
+    }
+    var seg = document.getElementById('exp_seg');
+    if(seg){
+      Array.prototype.forEach.call(seg.querySelectorAll('button'), function(b){
+        b.className = (+b.getAttribute('data-m')===i) ? 'on' : '';
+      });
+    }
+  }
+  var segEl = document.getElementById('exp_seg');
+  if(segEl){
+    Array.prototype.forEach.call(segEl.querySelectorAll('button'), function(b){
+      b.onclick = function(){ setMode(+b.getAttribute('data-m')); };
+    });
+  }
+  setMode(0);
+
   document.getElementById('tp_copy').onclick = function(){
     selectAll(ta);
-    copyText(opt.content).then(function(ok){
+    copyText(modes[cur].v).then(function(ok){
       if(!ok){
         alert('自动复制没成功。请手动长按（或全选）上方文本框复制内容。');
       }else{
@@ -1129,7 +1426,7 @@ function showImportPanel(){
      + '在备忘录、微信或网盘里打开之前保存的备份，<b>全选复制</b>后粘贴到下面，点「导入」即可恢复。<br>'
      + '注意：导入会<b>覆盖</b>当前全部数据。'
      + '</div>';
-  h += '<textarea id="pp_text" placeholder="在此粘贴备份内容（以 { 开头的那段文本）…" style="min-height:180px;font-size:11.5px"></textarea>';
+  h += '<textarea id="pp_text" placeholder="在此粘贴备份内容（RC2| 或 { 开头均可）…" style="min-height:180px;font-size:11.5px"></textarea>';
   h += '<button class="btn" id="pp_ok" style="margin-top:12px">导入</button>';
   h += '<button class="btn gh" id="pp_cancel" style="margin-top:10px">取消</button>';
   sheet(h, true);
@@ -1143,27 +1440,15 @@ function showImportPanel(){
   document.getElementById('pp_cancel').onclick = function(){ closeSheet(); };
 }
 
-/* ---------- 导出：JSON 备份（不含头像） ---------- */
+/* ---------- 导出：备份（紧凑 / JSON 双格式） ---------- */
 function exportJSON(){
-  var pets = S.pets.map(function(p){
-    var c = {};
-    for(var k in p) if(Object.prototype.hasOwnProperty.call(p,k)) c[k] = p[k];
-    c.avatar = '';                    // 头像永远不进备份
-    return c;
-  });
-  var data = JSON.stringify({
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    note: '爬宠管家备份 · 不含头像',
-    pets: pets,
-    records: S.records
-  }, null, 1);
-
+  var compact = buildCompact();
+  var json = buildJSON(true);
   showExportPanel({
     title: '导出备份（复制文本）',
-    content: data,
-    sizeText: '约 '+Math.round(data.length/1024)+' KB',
-    tip: '备份<b>不含头像</b>，体积很小，方便粘贴保存。头像只存在本机，换设备后重新设置即可。',
+    compact: compact,
+    json: json,
+    desc: '复制下面的内容，粘贴到备忘录、微信文件助手或网盘里保存；恢复时在「导入备份」里粘贴回来即可。',
     afterCopy: function(){
       markBackedUp();
       if(UI.tab==='home' || UI.tab==='mine') render();
@@ -1189,26 +1474,56 @@ function exportCSV(){
   showExportPanel({
     title: '导出 CSV（复制文本）',
     content: csv,
-    sizeText: (S.records.length)+' 条记录',
-    desc: '复制后粘贴到 Excel / _numbers / 记事本即可查看。',
-    tip: 'CSV 是只读表格，<b>不能用于恢复数据</b>。需要恢复请用 JSON 备份。'
+    tip: 'CSV 是只读表格，<b>不能用于恢复数据</b>。需要恢复请用备份功能。',
+    desc: '复制后粘贴到 Excel、Numbers 或记事本即可查看。'
   });
 }
 
-/* ---------- 导入：解析并应用 ---------- */
+/* ---------- 导入：自动识别格式并应用 ---------- */
 function applyImport(text){
   try{
-    var d = JSON.parse(text);
-    if(!d || !d.pets || !d.records) throw new Error('缺少必要字段');
-    if(!confirm('导入 '+d.pets.length+' 只宠物、'+d.records.length+' 条记录？\n\n确定 = 覆盖当前全部数据。')) return;
+    var t = String(text).replace(/^\s+/,'');
+    if(!t) throw new Error('内容为空');
+    var d, fmt;
+    if(t.indexOf('RC4|') === 0){            // 紧凑行式（枚举 + 日期压缩）
+      d = parseCompact(t); fmt = '紧凑格式';
+    }else if(t.indexOf('RC3|') === 0){      // 紧凑行式（仅枚举编码）
+      d = parseCompact(t); fmt = '紧凑格式（RC3）';
+    }else if(t.indexOf('RC2|') === 0){      // 紧凑行式（旧版纯文本）
+      d = parseCompact(t); fmt = '紧凑格式（RC2）';
+    }else{                                   // JSON（含旧版备份）
+      d = JSON.parse(t);
+      fmt = 'JSON 格式';
+      if(!d || !d.pets || !d.records) throw new Error('缺少必要字段');
+    }
+    // 完整性校验：声明数量与实到数量不符，多半是复制时被截断了
+    if(d.declared){
+      var dp = d.declared.pets, dr = d.declared.records;
+      var badP = (isNaN(dp) ? false : dp !== d.pets.length);
+      var badR = (isNaN(dr) ? false : dr !== d.records.length);
+      if(badP || badR){
+        if(!confirm('⚠ 内容似乎不完整\n\n'
+          + '文件声明有 '+dp+' 只宠物、'+dr+' 条记录，\n'
+          + '实际只读到 '+d.pets.length+' 只、'+d.records.length+' 条。\n\n'
+          + '通常是复制时被截断了。继续导入会丢失没读到的部分，建议先取消并重新完整复制。\n\n'
+          + '确定仍要导入吗？')) return;
+      }
+    }
 
-    // 备份不含头像，尽量沿用本机已有的
-    var localAv = {};
-    S.pets.forEach(function(p){ if(p.avatar) localAv[p.id] = p.avatar; });
+    if(!confirm('识别为'+fmt+'：'+d.pets.length+' 只宠物、'+d.records.length+' 条记录。\n\n确定导入？将覆盖当前全部数据。')) return;
+
+    // 备份不含头像，尽量沿用本机已有的（先按 id，再按名字兜底）
+    var avById = {}, avByName = {};
+    S.pets.forEach(function(p){
+      if(!p.avatar) return;
+      avById[p.id] = p.avatar;
+      if(p.name) avByName[p.name] = p.avatar;
+    });
     var kept = 0, none = 0;
     d.pets.forEach(function(p){
-      if(p.avatar){ return; }                       // 万一备份里有，尊重它
-      if(localAv[p.id]){ p.avatar = localAv[p.id]; kept++; }
+      if(p.avatar) return;
+      if(avById[p.id]){ p.avatar = avById[p.id]; kept++; }
+      else if(p.name && avByName[p.name]){ p.avatar = avByName[p.name]; kept++; }
       else { p.avatar = ''; none++; }
     });
 
@@ -1216,12 +1531,13 @@ function applyImport(text){
     UI.petId = S.pets[0] ? S.pets[0].id : null;
     markBackedUp();
     save(); render();
-    var tip = '导入成功';
+    var tip = '导入成功（'+fmt+'）';
     if(kept) tip += '\n\n已保留本机已有的 '+kept+' 张头像。';
     if(none) tip += (kept?'':'\n\n') + '有 '+none+' 只宠物没有头像，可在档案里重新设置。';
     alert(tip);
   }catch(e){
-    alert('没能识别出备份内容。\n\n请确认粘贴的是完整的备份文本（通常以 { 开头、以 } 结尾），没有缺行或被截断。');
+    alert('没能识别出备份内容。\n\n请确认粘贴的是完整备份文本 —— '
+        + '紧凑格式以 RC2| / RC3| / RC4| 开头，JSON 以 { 开头，中间没有被截断或插入其他文字。');
   }
 }
 function importBackup(){ showImportPanel(); }
